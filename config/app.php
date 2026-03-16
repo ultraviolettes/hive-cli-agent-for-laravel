@@ -55,6 +55,7 @@ return [
 
     'providers' => [
         App\Providers\AppServiceProvider::class,
+        Prism\Prism\PrismServiceProvider::class,
         Laravel\Ai\AiServiceProvider::class,
     ],
 
