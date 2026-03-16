@@ -35,10 +35,23 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
 
-        Dotenv::createMutable($cwd)->safeLoad();
+        // Parse the target project's .env file directly
+        $envValues = Dotenv::parse(file_get_contents($cwd . '/.env'));
 
-        // Refresh prism config with newly loaded env vars
-        $this->app['config']->set('prism.providers.anthropic.api_key', env('ANTHROPIC_API_KEY', ''));
-        $this->app['config']->set('prism.providers.openai.api_key', env('OPENAI_API_KEY', ''));
+        // Put values into $_ENV and $_SERVER so env() picks them up
+        foreach ($envValues as $key => $value) {
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+            putenv("$key=$value");
+        }
+
+        // Refresh prism provider configs with the loaded API keys
+        $this->app['config']->set('prism.providers.anthropic.api_key', $envValues['ANTHROPIC_API_KEY'] ?? '');
+        $this->app['config']->set('prism.providers.openai.api_key', $envValues['OPENAI_API_KEY'] ?? '');
+
+        // Also refresh Nightwatch-related env vars if present
+        if (isset($envValues['NIGHTWATCH_TOKEN'])) {
+            $this->app['config']->set('prism.providers.nightwatch_token', $envValues['NIGHTWATCH_TOKEN']);
+        }
     }
 }
