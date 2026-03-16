@@ -1,0 +1,10 @@
+/vendor
+/builds
+/.idea
+/.vscode
+/.vagrant
+.phpunit.result.cache
+.hive/
+.omc/
+.env
+HIVE_CLI_IMPLEMENTATION_PLAN.md
