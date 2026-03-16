@@ -47,7 +47,7 @@ class DagAnalyzerAgent implements Agent, HasStructuredOutput
                     'branch_name' => $schema->string()->required(),
                     'status' => $schema->string()->enum(['ready', 'blocked'])->required(),
                     'type' => $schema->string()->enum(['security', 'bug', 'dependency', 'feature', 'refactor'])->required(),
-                ])
+                ])->withoutAdditionalProperties()
             )->required(),
         ];
     }
