@@ -38,7 +38,17 @@ class DagAnalyzerAgent implements Agent, HasStructuredOutput
     public function schema(JsonSchema $schema): array
     {
         return [
-            'tasks' => $schema->array()->required(),
+            'tasks' => $schema->array()->items(
+                $schema->object([
+                    'title' => $schema->string()->required(),
+                    'description' => $schema->string()->required(),
+                    'priority' => $schema->integer()->min(0)->max(100)->required(),
+                    'depends_on' => $schema->array()->items($schema->integer())->required(),
+                    'branch_name' => $schema->string()->required(),
+                    'status' => $schema->string()->enum(['ready', 'blocked'])->required(),
+                    'type' => $schema->string()->enum(['security', 'bug', 'dependency', 'feature', 'refactor'])->required(),
+                ])
+            )->required(),
         ];
     }
 }
