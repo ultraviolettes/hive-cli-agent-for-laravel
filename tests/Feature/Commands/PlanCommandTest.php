@@ -1,18 +1,18 @@
 <?php
 
-use App\Ai\Agents\DagAnalyzerAgent;
+use App\Services\DagAnalyzer;
 
 test('plan command shows execution plan with --dry-run', function () {
-    DagAnalyzerAgent::fake([
-        [
-            'tasks' => [
-                ['title' => 'Fix CVE', 'description' => 'Update deps', 'priority' => 100,
-                    'depends_on' => [], 'branch_name' => 'fix/cve', 'status' => 'ready', 'type' => 'security'],
-                ['title' => 'Update deps', 'description' => 'Minor bump', 'priority' => 50,
-                    'depends_on' => [0], 'branch_name' => 'chore/deps', 'status' => 'blocked', 'type' => 'dependency'],
-            ],
+    $fakeDag = Mockery::mock(DagAnalyzer::class);
+    $fakeDag->shouldReceive('analyze')->once()->andReturn([
+        'tasks' => [
+            ['title' => 'Fix CVE', 'description' => 'Update deps', 'priority' => 100,
+                'depends_on' => [], 'branch_name' => 'fix/cve', 'status' => 'ready', 'type' => 'security'],
+            ['title' => 'Update deps', 'description' => 'Minor bump', 'priority' => 50,
+                'depends_on' => [0], 'branch_name' => 'chore/deps', 'status' => 'blocked', 'type' => 'dependency'],
         ],
     ]);
+    app()->instance(DagAnalyzer::class, $fakeDag);
 
     $tmp = sys_get_temp_dir() . '/hive-plan-' . uniqid();
     mkdir($tmp);

@@ -4,9 +4,9 @@ arch('commands are in Commands namespace')
     ->expect('App\Commands')
     ->toExtend(\LaravelZero\Framework\Commands\Command::class);
 
-arch('services are final')
+arch('services are classes')
     ->expect('App\Services')
-    ->toBeClasses()->toBeFinal();
+    ->toBeClasses();
 
 arch('DagAnalyzerAgent implements laravel/ai contracts')
     ->expect('App\Ai\Agents\DagAnalyzerAgent')

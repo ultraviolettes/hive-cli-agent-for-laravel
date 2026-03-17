@@ -2,8 +2,8 @@
 
 namespace App\Commands;
 
-use App\Ai\Agents\DagAnalyzerAgent;
 use App\Services\ContextBuilder;
+use App\Services\DagAnalyzer;
 use App\Services\GithubIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
@@ -39,10 +39,18 @@ class PlanCommand extends Command
         }
 
         $this->line('');
-        $response = spin(
-            fn () => (new DagAnalyzerAgent)->prompt($rawText),
-            '🐝 QueenBee is analyzing your backlog...'
-        );
+        $analyzer = app(DagAnalyzer::class);
+
+        try {
+            $response = spin(
+                fn () => $analyzer->analyze($rawText),
+                '🐝 QueenBee is analyzing your backlog...'
+            );
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
         $tasks = $response['tasks'];
 
         $this->line('');
