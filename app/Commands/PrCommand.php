@@ -115,8 +115,19 @@ class PrCommand extends Command
         }
 
         if ($all) {
-            // All branches that have changes or commits (not purely idle)
-            return array_values(array_filter($inspected, fn ($i) => ! str_contains($i['agent'], 'idle') || $i['changes'] !== '—'));
+            // All branches that have changes, pending work, or commits (done/idle with commits)
+            return array_values(array_filter($inspected, function ($i) {
+                // Include if has pending changes
+                if ($i['changes'] !== '—') {
+                    return true;
+                }
+                // Include if has commits (done or idle with work)
+                if (str_contains($i['agent'], 'done') || $i['last_commit'] !== '—') {
+                    return true;
+                }
+
+                return false;
+            }));
         }
 
         $this->error('Specify a branch or use --all');
