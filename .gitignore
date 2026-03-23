@@ -8,3 +8,4 @@
 .omc/
 .env
 HIVE_CLI_IMPLEMENTATION_PLAN.md
+.grepai/
