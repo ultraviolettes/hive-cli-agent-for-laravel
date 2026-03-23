@@ -4,6 +4,8 @@
 > `hive plan` turns your GitHub backlog into parallel Claude Code agents.  
 > `hive fix` turns your Nightwatch exceptions into pull requests.
 
+![Hive CLI demo](demo.gif)
+
 Hive is a **Laravel Zero** CLI that reads your GitHub issues or Nightwatch exceptions, analyzes task dependencies with AI, and spawns parallel [Claude Code](https://docs.anthropic.com/en/docs/claude-code) agents — each in its own git worktree with a task-specific `CLAUDE.md`.
 
 ## Why Hive?
