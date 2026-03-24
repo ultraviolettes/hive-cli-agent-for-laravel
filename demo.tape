@@ -14,33 +14,24 @@ Set Theme "Dracula"
 Set Padding 20
 Set TypingSpeed 60ms
 
-# Intro
-Type "# 🐝 Hive — Laravel agent orchestration CLI"
-Enter
-Sleep 800ms
-
-# hive init
+# Se placer directement dans le projet Laravel
 Type "cd ~/Herd/malistedenvies"
 Enter
 Sleep 500ms
 
-Type "hive init"
+# hive init
+Type "php ~/Projects/HIVE/repositories/hive-cli-laravel-agents/hive init"
 Enter
-Sleep 2s
+Sleep 2500ms
 
-# hive plan --text (pas besoin de GitHub token pour la démo)
-Type "hive plan --text 'Fix SQL injection CVE in composer deps. Fix npm audit vulnerabilities. Update Laravel to 12.x. Upgrade Filament to v5. Add dark mode to admin panel.' --dry-run"
+# hive plan --text dry-run — le money shot
+Type "php ~/Projects/HIVE/repositories/hive-cli-laravel-agents/hive plan --text 'Fix SQL injection CVE in composer deps. Fix npm audit vulnerabilities. Update Laravel to 12.x. Upgrade Filament to v5. Add dark mode to admin panel.' --dry-run"
 Enter
-Sleep 4s
-
-# hive fix --nightwatch dry-run
-Type "hive fix --nightwatch --limit 3 --dry-run"
-Enter
-Sleep 3s
+Sleep 15s
 
 # hive status
-Type "hive status"
+Type "php ~/Projects/HIVE/repositories/hive-cli-laravel-agents/hive status"
 Enter
-Sleep 1s
-
 Sleep 2s
+
+Sleep 3s
