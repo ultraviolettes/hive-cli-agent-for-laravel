@@ -34,12 +34,20 @@ final class WorktreeManager
 
         $process = new Process(['git', 'worktree', 'remove', $path, '--force'], $this->projectPath);
         $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new \RuntimeException('Failed to remove worktree: ' . $process->getErrorOutput());
+        }
     }
 
     public function list(): array
     {
         $process = new Process(['git', 'worktree', 'list', '--porcelain'], $this->projectPath);
         $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new \RuntimeException('Failed to list worktrees: ' . $process->getErrorOutput());
+        }
 
         $worktrees = [];
         $current = [];

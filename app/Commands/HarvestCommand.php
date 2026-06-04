@@ -32,7 +32,13 @@ class HarvestCommand extends Command
             return self::SUCCESS;
         }
 
-        spin(fn () => $manager->harvest($branch), 'Harvesting...');
+        try {
+            spin(fn () => $manager->harvest($branch), 'Harvesting...');
+        } catch (\RuntimeException $e) {
+            $this->error("Failed to harvest {$branch}: " . $e->getMessage());
+
+            return self::FAILURE;
+        }
 
         $this->info("✅ <comment>{$branch}</comment> harvested.");
 

@@ -32,3 +32,18 @@ test('harvest removes worktree', function () {
     $this->manager->harvest('feat/to-harvest');
     expect(is_dir($path))->toBeFalse();
 });
+
+test('harvest throws when the worktree does not exist', function () {
+    expect(fn () => $this->manager->harvest('feat/never-spawned'))
+        ->toThrow(\RuntimeException::class);
+});
+
+test('list throws when the directory is not a git repository', function () {
+    $nonGit = sys_get_temp_dir() . '/hive-nongit-' . uniqid();
+    mkdir($nonGit);
+    $manager = new WorktreeManager($nonGit);
+
+    expect(fn () => $manager->list())->toThrow(\RuntimeException::class);
+
+    exec("rm -rf {$nonGit}");
+});
