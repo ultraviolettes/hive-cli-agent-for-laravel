@@ -7,6 +7,7 @@ use App\Services\DagAnalyzer;
 use App\Services\NightwatchIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -24,7 +25,8 @@ class FixCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
         if (! $config->exists()) {
             $this->error('Run hive init first.');
 
@@ -37,8 +39,8 @@ class FixCommand extends Command
             return self::FAILURE;
         }
 
-        $token = env($config->get('nightwatch_token_env', 'NIGHTWATCH_TOKEN'));
-        $projectId = env('NIGHTWATCH_PROJECT_ID');
+        $token = $context->nightwatchToken();
+        $projectId = $context->nightwatchProjectId();
 
         if (! $token || ! $projectId) {
             $this->error('Set NIGHTWATCH_TOKEN and NIGHTWATCH_PROJECT_ID in your .env');
@@ -67,7 +69,7 @@ class FixCommand extends Command
 
         try {
             $response = spin(
-                fn () => $analyzer->analyze($rawText),
+                fn () => $analyzer->analyze($rawText, $context->anthropicApiKey()),
                 '🐝 QueenBee is building the fix plan...'
             );
         } catch (\RuntimeException $e) {
@@ -106,7 +108,7 @@ class FixCommand extends Command
             return self::SUCCESS;
         }
 
-        $manager = new WorktreeManager(getcwd());
+        $manager = new WorktreeManager($context->path);
         $builder = new ContextBuilder;
 
         foreach ($readyTasks as $task) {

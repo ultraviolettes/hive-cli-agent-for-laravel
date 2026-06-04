@@ -7,12 +7,10 @@ test('throws clear error when no AI provider is available', function () {
     $mockClaude = Mockery::mock(ClaudeCodeGateway::class);
     $mockClaude->shouldReceive('isAvailable')->andReturn(false);
 
-    // Ensure no API key is set
-    config()->set('prism.providers.anthropic.api_key', '');
-
     $analyzer = new DagAnalyzer($mockClaude);
 
-    expect(fn () => $analyzer->analyze('some backlog'))
+    // No Claude Code CLI available and no API key supplied -> no provider.
+    expect(fn () => $analyzer->analyze('some backlog', null))
         ->toThrow(\RuntimeException::class, 'No AI provider available');
 });
 

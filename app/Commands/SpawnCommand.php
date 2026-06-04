@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Services\ContextBuilder;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\spin;
@@ -18,7 +19,8 @@ class SpawnCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $hive = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($hive->path);
 
         if (! $config->exists()) {
             $this->error('No .hive.json found. Run hive init first.');
@@ -28,7 +30,7 @@ class SpawnCommand extends Command
 
         $branch = $this->argument('branch');
         $context = $this->option('context');
-        $manager = new WorktreeManager(getcwd());
+        $manager = new WorktreeManager($hive->path);
 
         $this->info("🐝 Spawning bee for <comment>{$branch}</comment>...");
 

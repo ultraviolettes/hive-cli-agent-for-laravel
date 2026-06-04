@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 use Symfony\Component\Process\Process;
 
@@ -23,15 +24,15 @@ class PrCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
         if (! $config->exists()) {
             $this->error('No .hive.json found. Run hive init first.');
 
             return self::FAILURE;
         }
 
-        $cwd = getcwd();
-        $manager = new WorktreeManager($cwd);
+        $manager = new WorktreeManager($context->path);
         $inspector = new WorktreeInspector;
         $worktrees = $manager->list();
 

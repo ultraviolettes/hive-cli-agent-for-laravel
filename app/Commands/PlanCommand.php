@@ -7,6 +7,7 @@ use App\Services\DagAnalyzer;
 use App\Services\GithubIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -26,7 +27,8 @@ class PlanCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
         if (! $config->exists()) {
             $this->error('Run hive init first.');
 
@@ -43,7 +45,7 @@ class PlanCommand extends Command
 
         try {
             $response = spin(
-                fn () => $analyzer->analyze($rawText),
+                fn () => $analyzer->analyze($rawText, $context->anthropicApiKey()),
                 '🐝 QueenBee is analyzing your backlog...'
             );
         } catch (\RuntimeException $e) {
@@ -84,7 +86,7 @@ class PlanCommand extends Command
             return self::SUCCESS;
         }
 
-        $manager = new WorktreeManager(getcwd());
+        $manager = new WorktreeManager($context->path);
         $builder = new ContextBuilder;
 
         foreach ($readyTasks as $task) {

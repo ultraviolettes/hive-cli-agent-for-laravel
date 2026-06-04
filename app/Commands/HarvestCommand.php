@@ -4,6 +4,7 @@ namespace App\Commands;
 
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -17,7 +18,8 @@ class HarvestCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
 
         if (! $config->exists()) {
             $this->error('No .hive.json found. Run hive init first.');
@@ -26,7 +28,7 @@ class HarvestCommand extends Command
         }
 
         $branch = $this->argument('branch');
-        $manager = new WorktreeManager(getcwd());
+        $manager = new WorktreeManager($context->path);
 
         if (! confirm("Harvest worktree for {$branch}?")) {
             return self::SUCCESS;

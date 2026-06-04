@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
 
 class StatusCommand extends Command
@@ -15,7 +16,8 @@ class StatusCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
 
         if (! $config->exists()) {
             $this->error('No .hive.json found. Run hive init first.');
@@ -23,7 +25,7 @@ class StatusCommand extends Command
             return self::FAILURE;
         }
 
-        $manager = new WorktreeManager(getcwd());
+        $manager = new WorktreeManager($context->path);
         $worktrees = $manager->list();
 
         if (empty($worktrees)) {
