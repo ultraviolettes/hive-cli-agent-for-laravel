@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
 use App\Services\DagAnalyzer;
 use App\Services\GithubIngester;
@@ -41,11 +42,15 @@ class PlanCommand extends Command
         }
 
         $this->line('');
-        $analyzer = app(DagAnalyzer::class);
+        $runner = new PlanRunner(
+            app(DagAnalyzer::class),
+            new WorktreeManager($context->path),
+            new ContextBuilder,
+        );
 
         try {
-            $response = spin(
-                fn () => $analyzer->analyze($rawText, $context->anthropicApiKey()),
+            $tasks = spin(
+                fn () => $runner->plan($rawText, $context->anthropicApiKey()),
                 '🐝 QueenBee is analyzing your backlog...'
             );
         } catch (\RuntimeException $e) {
@@ -53,7 +58,6 @@ class PlanCommand extends Command
 
             return self::FAILURE;
         }
-        $tasks = $response['tasks'];
 
         $this->line('');
         $this->line("📋 <comment>Execution plan — {$config->get('project')}</comment>");
@@ -78,7 +82,7 @@ class PlanCommand extends Command
             return self::SUCCESS;
         }
 
-        $readyTasks = array_filter($tasks, fn ($t) => $t['status'] === 'ready');
+        $readyTasks = $runner->readyTasks($tasks);
         $this->line('');
         $this->line(count($readyTasks) . ' task(s) ready to spawn in parallel.');
 
@@ -86,24 +90,19 @@ class PlanCommand extends Command
             return self::SUCCESS;
         }
 
-        $manager = new WorktreeManager($context->path);
-        $builder = new ContextBuilder;
+        $stack = $config->get('stack', []);
 
         foreach ($readyTasks as $task) {
-            $meta = [
-                'stack' => $config->get('stack', []),
-                'type' => $task['type'],
-            ];
-            if (isset($task['issue_number'])) {
-                $meta['issue'] = $task['issue_number'];
+            $result = spin(
+                fn () => $runner->spawnTask($task, $stack),
+                "Spawning {$task['branch_name']}..."
+            );
+
+            if ($result['error']) {
+                $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
+            } else {
+                $this->line("  ✅ <comment>{$result['branch']}</comment>");
             }
-
-            spin(function () use ($manager, $builder, $task, $meta) {
-                $path = $manager->spawn($task['branch_name']);
-                $builder->writeContext($path, $task['branch_name'], $task['description'], $meta);
-            }, "Spawning {$task['branch_name']}...");
-
-            $this->line("  ✅ <comment>{$task['branch_name']}</comment>");
         }
 
         $this->line('');

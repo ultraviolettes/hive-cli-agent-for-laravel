@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
 use App\Services\DagAnalyzer;
 use App\Services\NightwatchIngester;
@@ -65,11 +66,15 @@ class FixCommand extends Command
         $this->line(count($exceptions) . ' unresolved exception(s) found.');
 
         $rawText = $ingester->formatForAnalysis($exceptions);
-        $analyzer = app(DagAnalyzer::class);
+        $runner = new PlanRunner(
+            app(DagAnalyzer::class),
+            new WorktreeManager($context->path),
+            new ContextBuilder,
+        );
 
         try {
-            $response = spin(
-                fn () => $analyzer->analyze($rawText, $context->anthropicApiKey()),
+            $tasks = spin(
+                fn () => $runner->plan($rawText, $context->anthropicApiKey()),
                 '🐝 QueenBee is building the fix plan...'
             );
         } catch (\RuntimeException $e) {
@@ -77,7 +82,6 @@ class FixCommand extends Command
 
             return self::FAILURE;
         }
-        $tasks = $response['tasks'];
 
         $this->line('');
         $this->line("🔥 <comment>Fix plan — {$config->get('project')}</comment>");
@@ -100,7 +104,7 @@ class FixCommand extends Command
             return self::SUCCESS;
         }
 
-        $readyTasks = array_filter($tasks, fn ($t) => $t['status'] === 'ready');
+        $readyTasks = $runner->readyTasks($tasks);
         $this->line('');
         $this->line(count($readyTasks) . ' fix(es) ready to spawn.');
 
@@ -108,19 +112,19 @@ class FixCommand extends Command
             return self::SUCCESS;
         }
 
-        $manager = new WorktreeManager($context->path);
-        $builder = new ContextBuilder;
+        $stack = $config->get('stack', []);
 
         foreach ($readyTasks as $task) {
-            spin(function () use ($manager, $builder, $task, $config) {
-                $path = $manager->spawn($task['branch_name']);
-                $builder->writeContext($path, $task['branch_name'], $task['description'], [
-                    'stack' => $config->get('stack', []),
-                    'type' => 'bug',
-                ]);
-            }, "Spawning {$task['branch_name']}...");
+            $result = spin(
+                fn () => $runner->spawnTask($task, $stack, 'bug'),
+                "Spawning {$task['branch_name']}..."
+            );
 
-            $this->line("  ✅ <comment>{$task['branch_name']}</comment>");
+            if ($result['error']) {
+                $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
+            } else {
+                $this->line("  ✅ <comment>{$result['branch']}</comment>");
+            }
         }
 
         $this->line('');
