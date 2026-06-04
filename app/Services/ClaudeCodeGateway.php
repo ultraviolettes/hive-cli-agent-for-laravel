@@ -47,6 +47,10 @@ class ClaudeCodeGateway
             throw new \RuntimeException('Failed to parse Claude Code JSON response: ' . json_last_error_msg());
         }
 
+        if (! is_array($decoded)) {
+            throw new \RuntimeException('Expected a JSON object from Claude Code, got: ' . gettype($decoded));
+        }
+
         return $decoded;
     }
 
