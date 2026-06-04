@@ -68,17 +68,17 @@ final class WorktreeInspector
      */
     private function getChangeSummary(string $path): string
     {
-        $process = new Process(['git', 'diff', '--stat', '--cached', 'HEAD'], $path);
+        $process = new Process(['git', 'diff', '--name-only', '--cached'], $path);
         $process->run();
-        $staged = substr_count($process->getOutput(), "\n");
+        $staged = $this->countLines($process->getOutput());
 
-        $process = new Process(['git', 'diff', '--stat'], $path);
+        $process = new Process(['git', 'diff', '--name-only'], $path);
         $process->run();
-        $unstaged = substr_count($process->getOutput(), "\n");
+        $unstaged = $this->countLines($process->getOutput());
 
         $process = new Process(['git', 'ls-files', '--others', '--exclude-standard'], $path);
         $process->run();
-        $untracked = substr_count(trim($process->getOutput()), "\n") + (trim($process->getOutput()) !== '' ? 1 : 0);
+        $untracked = $this->countLines($process->getOutput());
 
         $parts = [];
         if ($staged > 0) {
@@ -92,6 +92,16 @@ final class WorktreeInspector
         }
 
         return empty($parts) ? '—' : implode(', ', $parts);
+    }
+
+    /**
+     * Count the number of non-empty lines in command output (one file per line).
+     */
+    private function countLines(string $output): int
+    {
+        $output = trim($output);
+
+        return $output === '' ? 0 : substr_count($output, "\n") + 1;
     }
 
     /**
