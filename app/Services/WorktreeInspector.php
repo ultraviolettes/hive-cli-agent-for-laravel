@@ -2,10 +2,15 @@
 
 namespace App\Services;
 
-use Symfony\Component\Process\Process;
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
 
 final class WorktreeInspector
 {
+    public function __construct(
+        private readonly ProcessRunner $process = new SymfonyProcessRunner,
+    ) {}
+
     /**
      * Get detailed status for a worktree.
      */
@@ -37,10 +42,9 @@ final class WorktreeInspector
      */
     private function detectAgent(string $path): string
     {
-        $process = new Process(['pgrep', '-f', "claude.*{$path}"]);
-        $process->run();
+        $result = $this->process->run(['pgrep', '-f', "claude.*{$path}"]);
 
-        if ($process->isSuccessful() && trim($process->getOutput()) !== '') {
+        if ($result->successful && trim($result->output) !== '') {
             return '🐝 agent running';
         }
 
@@ -68,17 +72,17 @@ final class WorktreeInspector
      */
     private function getChangeSummary(string $path): string
     {
-        $process = new Process(['git', 'diff', '--name-only', '--cached'], $path);
-        $process->run();
-        $staged = $this->countLines($process->getOutput());
+        $staged = $this->countLines(
+            $this->process->run(['git', 'diff', '--name-only', '--cached'], $path)->output
+        );
 
-        $process = new Process(['git', 'diff', '--name-only'], $path);
-        $process->run();
-        $unstaged = $this->countLines($process->getOutput());
+        $unstaged = $this->countLines(
+            $this->process->run(['git', 'diff', '--name-only'], $path)->output
+        );
 
-        $process = new Process(['git', 'ls-files', '--others', '--exclude-standard'], $path);
-        $process->run();
-        $untracked = $this->countLines($process->getOutput());
+        $untracked = $this->countLines(
+            $this->process->run(['git', 'ls-files', '--others', '--exclude-standard'], $path)->output
+        );
 
         $parts = [];
         if ($staged > 0) {
@@ -109,10 +113,7 @@ final class WorktreeInspector
      */
     private function getLastCommit(string $path): string
     {
-        $process = new Process(['git', 'log', '-1', '--format=%s (%cr)', '--no-merges'], $path);
-        $process->run();
-
-        $output = trim($process->getOutput());
+        $output = trim($this->process->run(['git', 'log', '-1', '--format=%s (%cr)', '--no-merges'], $path)->output);
 
         if (empty($output)) {
             return '—';
@@ -133,11 +134,10 @@ final class WorktreeInspector
     {
         // Try to count commits ahead of main
         foreach (['main', 'master', 'develop'] as $base) {
-            $process = new Process(['git', 'rev-list', '--count', "{$base}..HEAD"], $path);
-            $process->run();
+            $result = $this->process->run(['git', 'rev-list', '--count', "{$base}..HEAD"], $path);
 
-            if ($process->isSuccessful()) {
-                return (int) trim($process->getOutput());
+            if ($result->successful) {
+                return (int) trim($result->output);
             }
         }
 
@@ -149,9 +149,8 @@ final class WorktreeInspector
      */
     private function getGitStatus(string $path): ?string
     {
-        $process = new Process(['git', 'status'], $path);
-        $process->run();
+        $result = $this->process->run(['git', 'status'], $path);
 
-        return $process->isSuccessful() ? $process->getOutput() : null;
+        return $result->successful ? $result->output : null;
     }
 }

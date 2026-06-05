@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
-use Symfony\Component\Process\Process;
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
 
 final class GithubIngester
 {
-    public function __construct(private readonly string $ghBinary = 'gh') {}
+    public function __construct(
+        private readonly string $ghBinary = 'gh',
+        private readonly ProcessRunner $process = new SymfonyProcessRunner,
+    ) {}
 
     public function fetch(string $repo, ?string $milestone = null, int $limit = 50): array
     {
@@ -21,14 +25,13 @@ final class GithubIngester
             $args[] = "milestone:\"{$milestone}\"";
         }
 
-        $process = new Process($args);
-        $process->run();
+        $result = $this->process->run($args);
 
-        if (! $process->isSuccessful()) {
-            throw new \RuntimeException('gh CLI error: ' . $process->getErrorOutput());
+        if (! $result->successful) {
+            throw new \RuntimeException('gh CLI error: ' . $result->errorOutput);
         }
 
-        return $this->parseOutput($process->getOutput());
+        return $this->parseOutput($result->output);
     }
 
     public function parseOutput(string $json): array
@@ -54,9 +57,6 @@ final class GithubIngester
 
     private function ghAvailable(): bool
     {
-        $process = new Process(['which', $this->ghBinary]);
-        $process->run();
-
-        return $process->isSuccessful();
+        return $this->process->run(['which', $this->ghBinary])->successful;
     }
 }
