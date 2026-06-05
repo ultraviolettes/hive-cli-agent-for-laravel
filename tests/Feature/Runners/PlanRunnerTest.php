@@ -4,6 +4,7 @@ use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
 use App\Services\DagAnalyzer;
 use App\Services\WorktreeManager;
+use App\Support\HiveState;
 
 beforeEach(function () {
     $this->tmp = sys_get_temp_dir() . '/hive-runner-' . uniqid();
@@ -90,4 +91,27 @@ test('execute spawns only the ready tasks', function () {
     expect($results)->toHaveCount(1)
         ->and($results[0]['branch'])->toBe('fix/ready')
         ->and($results[0]['error'])->toBeNull();
+});
+
+test('plan persists the DAG to the state store when one is attached', function () {
+    $analyzer = Mockery::mock(DagAnalyzer::class);
+    $analyzer->shouldReceive('analyze')->andReturn([
+        'tasks' => [['branch_name' => 'fix/a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready']],
+    ]);
+    $runner = new PlanRunner($analyzer, $this->manager, new ContextBuilder, new HiveState($this->tmp));
+
+    $runner->plan('backlog');
+
+    expect((new HiveState($this->tmp))->get('fix/a'))->not->toBeNull();
+});
+
+test('spawnTask records the spawned worktree in the state store', function () {
+    $runner = new PlanRunner(Mockery::mock(DagAnalyzer::class), $this->manager, new ContextBuilder, new HiveState($this->tmp));
+    $task = ['branch_name' => 'feat/login', 'description' => 'x', 'status' => 'ready', 'type' => 'feature'];
+
+    $runner->spawnTask($task, ['laravel']);
+
+    $persisted = (new HiveState($this->tmp))->get('feat/login');
+    expect($persisted['runtime'])->toBe('spawned')
+        ->and($persisted['worktree_path'])->not->toBeNull();
 });

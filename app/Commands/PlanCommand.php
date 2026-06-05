@@ -9,6 +9,7 @@ use App\Services\GithubIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
+use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -46,6 +47,7 @@ class PlanCommand extends Command
             app(DagAnalyzer::class),
             new WorktreeManager($context->path),
             new ContextBuilder,
+            new HiveState($context->path),
         );
 
         try {

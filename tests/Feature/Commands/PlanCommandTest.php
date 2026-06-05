@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\DagAnalyzer;
+use App\Support\HiveState;
 
 test('plan command shows execution plan with --dry-run', function () {
     $fakeDag = Mockery::mock(DagAnalyzer::class);
@@ -22,6 +23,12 @@ test('plan command shows execution plan with --dry-run', function () {
 
     $this->artisan('plan', ['--text' => 'Fix CVE then update deps', '--dry-run' => true])
         ->assertExitCode(0);
+
+    // The command persisted the DAG to the state store, even in --dry-run.
+    expect(file_exists($tmp . '/.hive/state.json'))->toBeTrue();
+    $state = new HiveState($tmp);
+    expect($state->get('fix/cve'))->not->toBeNull()
+        ->and($state->get('chore/deps')['status'])->toBe('blocked');
 
     exec("rm -rf $tmp");
 });

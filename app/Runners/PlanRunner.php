@@ -5,6 +5,7 @@ namespace App\Runners;
 use App\Services\ContextBuilder;
 use App\Services\DagAnalyzer;
 use App\Services\WorktreeManager;
+use App\Support\HiveState;
 
 /**
  * Orchestrates the plan -> execute pipeline shared by `hive plan` and
@@ -21,16 +22,22 @@ final class PlanRunner
         private readonly DagAnalyzer $analyzer,
         private readonly WorktreeManager $manager,
         private readonly ContextBuilder $builder,
+        private readonly ?HiveState $state = null,
     ) {}
 
     /**
-     * Build an execution DAG from raw backlog text.
+     * Build an execution DAG from raw backlog text. When a state store is
+     * attached, the plan is persisted so a front-end can read it back.
      *
      * @return array<int, array<string, mixed>>
      */
     public function plan(string $rawText, ?string $anthropicApiKey = null): array
     {
-        return $this->analyzer->analyze($rawText, $anthropicApiKey)['tasks'];
+        $tasks = $this->analyzer->analyze($rawText, $anthropicApiKey)['tasks'];
+
+        $this->state?->putPlan($tasks);
+
+        return $tasks;
     }
 
     /**
@@ -61,9 +68,12 @@ final class PlanRunner
         try {
             $path = $this->manager->spawn($branch);
             $this->builder->writeContext($path, $branch, $task['description'] ?? '', $this->buildMeta($task, $stack, $typeOverride));
+            $this->state?->markSpawned($branch, $path);
 
             return ['branch' => $branch, 'path' => $path, 'error' => null];
         } catch (\RuntimeException $e) {
+            $this->state?->markFailed($branch, $e->getMessage());
+
             return ['branch' => $branch, 'path' => null, 'error' => $e->getMessage()];
         }
     }
