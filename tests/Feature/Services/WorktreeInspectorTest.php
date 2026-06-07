@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\WorktreeInspector;
+use App\Support\BeeStatus;
 
 beforeEach(function () {
     $this->tmp = sys_get_temp_dir() . '/hive-wi-' . uniqid();
@@ -25,13 +26,15 @@ test('change summary counts staged and untracked files accurately', function () 
     $result = $this->inspector->inspect(['path' => $this->tmp, 'branch' => 'refs/heads/main']);
 
     expect($result['changes'])->toContain('1 staged')
-        ->and($result['changes'])->toContain('1 new');
+        ->and($result['changes'])->toContain('1 new')
+        ->and($result['status'])->toBe(BeeStatus::ChangesPending);
 });
 
 test('change summary is a dash when there is nothing to report', function () {
     $result = $this->inspector->inspect(['path' => $this->tmp, 'branch' => 'refs/heads/main']);
 
-    expect($result['changes'])->toBe('—');
+    expect($result['changes'])->toBe('—')
+        ->and($result['status'])->toBe(BeeStatus::Idle);
 });
 
 test('shortBranch strips the refs/heads prefix', function () {

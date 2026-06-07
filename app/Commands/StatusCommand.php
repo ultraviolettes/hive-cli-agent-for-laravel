@@ -4,6 +4,7 @@ namespace App\Commands;
 
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
+use App\Support\BeeStatus;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
@@ -66,18 +67,13 @@ class StatusCommand extends Command
         $counts = ['running' => 0, 'done' => 0, 'pending' => 0, 'idle' => 0];
 
         foreach ($worktrees as $worktree) {
-            $info = $inspector->inspect($worktree);
-            $agent = $info['agent'];
-
-            if (str_contains($agent, 'running')) {
-                $counts['running']++;
-            } elseif (str_contains($agent, 'done')) {
-                $counts['done']++;
-            } elseif (str_contains($agent, 'pending')) {
-                $counts['pending']++;
-            } else {
-                $counts['idle']++;
-            }
+            $key = match ($inspector->inspect($worktree)['status']) {
+                BeeStatus::Running => 'running',
+                BeeStatus::Done => 'done',
+                BeeStatus::ChangesPending => 'pending',
+                default => 'idle',
+            };
+            $counts[$key]++;
         }
 
         $parts = [];

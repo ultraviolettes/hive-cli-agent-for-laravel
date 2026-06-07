@@ -4,6 +4,7 @@ namespace App\Commands;
 
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
+use App\Support\BeeStatus;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
@@ -123,7 +124,7 @@ class PrCommand extends Command
                     return true;
                 }
                 // Include if has commits (done or idle with work)
-                if (str_contains($i['agent'], 'done') || $i['last_commit'] !== '—') {
+                if ($i['status'] === BeeStatus::Done || $i['last_commit'] !== '—') {
                     return true;
                 }
 
