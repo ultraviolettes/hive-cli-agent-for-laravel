@@ -2,10 +2,11 @@
 
 namespace App\Services;
 
+use App\Contracts\ClaudeCode;
 use App\Process\ProcessRunner;
 use App\Process\SymfonyProcessRunner;
 
-class ClaudeCodeGateway
+final class ClaudeCodeGateway implements ClaudeCode
 {
     public function __construct(
         private readonly string $binary = 'claude',

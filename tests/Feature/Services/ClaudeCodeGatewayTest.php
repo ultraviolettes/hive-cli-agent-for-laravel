@@ -10,18 +10,13 @@ use Tests\Support\FakeProcessRunner;
  */
 function fakeGateway(string $cannedOutput): ClaudeCodeGateway
 {
-    return new class($cannedOutput) extends ClaudeCodeGateway
-    {
-        public function __construct(private readonly string $cannedOutput)
-        {
-            parent::__construct();
-        }
+    // Claude Code returns {"result": "..."}; queue that so promptJson() runs
+    // its real fence-stripping + decoding on the inner payload.
+    $runner = (new FakeProcessRunner)->queue(
+        new ProcessResult(true, json_encode(['result' => $cannedOutput]), '', 0)
+    );
 
-        public function prompt(string $prompt): string
-        {
-            return $this->cannedOutput;
-        }
-    };
+    return new ClaudeCodeGateway('claude', $runner);
 }
 
 test('throws when claude cli is not available', function () {

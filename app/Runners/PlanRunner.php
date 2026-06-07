@@ -2,8 +2,8 @@
 
 namespace App\Runners;
 
+use App\Contracts\DagProvider;
 use App\Services\ContextBuilder;
-use App\Services\DagAnalyzer;
 use App\Services\WorktreeManager;
 use App\Support\HiveState;
 
@@ -19,7 +19,7 @@ use App\Support\HiveState;
 final class PlanRunner
 {
     public function __construct(
-        private readonly DagAnalyzer $analyzer,
+        private readonly DagProvider $analyzer,
         private readonly WorktreeManager $manager,
         private readonly ContextBuilder $builder,
         private readonly ?HiveState $state = null,

@@ -8,6 +8,10 @@ arch('services are classes')
     ->expect('App\Services')
     ->toBeClasses();
 
+arch('services are final')
+    ->expect('App\Services')
+    ->toBeFinal();
+
 arch('DagAnalyzerAgent implements laravel/ai contracts')
     ->expect('App\Ai\Agents\DagAnalyzerAgent')
     ->toImplement(\Laravel\Ai\Contracts\Agent::class)

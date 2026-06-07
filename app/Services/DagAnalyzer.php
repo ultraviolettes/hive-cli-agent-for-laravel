@@ -3,11 +3,13 @@
 namespace App\Services;
 
 use App\Ai\Agents\DagAnalyzerAgent;
+use App\Contracts\ClaudeCode;
+use App\Contracts\DagProvider;
 
-class DagAnalyzer
+final class DagAnalyzer implements DagProvider
 {
     public function __construct(
-        private readonly ClaudeCodeGateway $claude = new ClaudeCodeGateway,
+        private readonly ClaudeCode $claude = new ClaudeCodeGateway,
     ) {}
 
     /**

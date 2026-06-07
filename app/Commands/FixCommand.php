@@ -2,9 +2,9 @@
 
 namespace App\Commands;
 
+use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
-use App\Services\DagAnalyzer;
 use App\Services\NightwatchIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
@@ -68,7 +68,7 @@ class FixCommand extends Command
 
         $rawText = $ingester->formatForAnalysis($exceptions);
         $runner = new PlanRunner(
-            app(DagAnalyzer::class),
+            app(DagProvider::class),
             new WorktreeManager($context->path),
             new ContextBuilder,
             new HiveState($context->path),

@@ -1,8 +1,8 @@
 <?php
 
+use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
-use App\Services\DagAnalyzer;
 use App\Services\WorktreeManager;
 use App\Support\HiveState;
 
@@ -16,17 +16,17 @@ beforeEach(function () {
 
 afterEach(fn () => exec("rm -rf {$this->tmp}"));
 
-function planRunner(WorktreeManager $manager, ?DagAnalyzer $analyzer = null): PlanRunner
+function planRunner(WorktreeManager $manager, ?DagProvider $analyzer = null): PlanRunner
 {
     return new PlanRunner(
-        $analyzer ?? Mockery::mock(DagAnalyzer::class),
+        $analyzer ?? Mockery::mock(DagProvider::class),
         $manager,
         new ContextBuilder,
     );
 }
 
 test('plan delegates to the analyzer and returns the task list', function () {
-    $analyzer = Mockery::mock(DagAnalyzer::class);
+    $analyzer = Mockery::mock(DagProvider::class);
     $analyzer->shouldReceive('analyze')->once()->with('backlog', 'sk-key')->andReturn([
         'tasks' => [['branch_name' => 'fix/a', 'status' => 'ready']],
     ]);
@@ -94,7 +94,7 @@ test('execute spawns only the ready tasks', function () {
 });
 
 test('plan persists the DAG to the state store when one is attached', function () {
-    $analyzer = Mockery::mock(DagAnalyzer::class);
+    $analyzer = Mockery::mock(DagProvider::class);
     $analyzer->shouldReceive('analyze')->andReturn([
         'tasks' => [['branch_name' => 'fix/a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready']],
     ]);
@@ -106,7 +106,7 @@ test('plan persists the DAG to the state store when one is attached', function (
 });
 
 test('spawnTask records the spawned worktree in the state store', function () {
-    $runner = new PlanRunner(Mockery::mock(DagAnalyzer::class), $this->manager, new ContextBuilder, new HiveState($this->tmp));
+    $runner = new PlanRunner(Mockery::mock(DagProvider::class), $this->manager, new ContextBuilder, new HiveState($this->tmp));
     $task = ['branch_name' => 'feat/login', 'description' => 'x', 'status' => 'ready', 'type' => 'feature'];
 
     $runner->spawnTask($task, ['laravel']);
