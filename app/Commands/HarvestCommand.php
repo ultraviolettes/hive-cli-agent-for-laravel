@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
+use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -12,7 +13,8 @@ use function Laravel\Prompts\spin;
 
 class HarvestCommand extends Command
 {
-    protected $signature = 'harvest {branch : Branch to harvest}';
+    protected $signature = 'harvest {branch : Branch to harvest}
+                                    {--force : Skip the confirmation prompt (for scripts/GUI)}';
 
     protected $description = 'Harvest (remove) a worktree after merge';
 
@@ -30,7 +32,7 @@ class HarvestCommand extends Command
         $branch = $this->argument('branch');
         $manager = new WorktreeManager($context->path);
 
-        if (! confirm("Harvest worktree for {$branch}?")) {
+        if (! $this->option('force') && ! confirm("Harvest worktree for {$branch}?")) {
             return self::SUCCESS;
         }
 
@@ -43,6 +45,15 @@ class HarvestCommand extends Command
         }
 
         $this->info("✅ <comment>{$branch}</comment> harvested.");
+
+        // Harvest means the work was merged: record it and advance the DAG.
+        $state = new HiveState($context->path);
+        $state->markMerged($branch);
+
+        $unblocked = $state->unblockable();
+        if (! empty($unblocked)) {
+            $this->line(count($unblocked) . ' task(s) now unblocked — run <comment>hive advance</comment> to spawn them.');
+        }
 
         return self::SUCCESS;
     }

@@ -35,9 +35,10 @@ class StatusCommand extends Command
 
         // Planned tasks that have no worktree yet (blocked, awaiting spawn, or
         // failed) — invisible in the live worktree view, read from the store.
+        // Spawned tasks show as Active Bees; merged ones are done.
         $pending = array_values(array_filter(
             $state->all(),
-            fn ($task) => ($task['runtime'] ?? 'planned') !== 'spawned',
+            fn ($task) => ! in_array($task['runtime'] ?? 'planned', ['spawned', 'merged'], true),
         ));
 
         if (empty($worktrees) && empty($pending)) {
