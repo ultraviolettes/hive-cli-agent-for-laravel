@@ -3,10 +3,16 @@
 namespace App\Process;
 
 /**
- * Detaches commands with nohup + proc_open (array command, so no shell): the
- * child ignores SIGHUP and keeps running after the CLI exits. PHP does not
- * reap proc_open children on shutdown, so the process is left running on
- * purpose (no proc_close, which would block).
+ * Detaches commands so they outlive the CLI and run in parallel.
+ *
+ * A short-lived `/bin/sh` backgrounds the command with nohup and prints the
+ * agent's PID. The shell returns in milliseconds (so proc_close never blocks,
+ * regardless of how long the agent runs); the agent is orphaned and, because
+ * nohup ignores SIGHUP, keeps running after the CLI exits.
+ *
+ * Untrusted input is passed as positional arguments ($0 = log file, $@ = the
+ * command) and only referenced through quoted expansions — the script string
+ * itself is a fixed literal, so there is no shell injection.
  */
 final class NohupBackgroundRunner implements BackgroundRunner
 {
@@ -18,32 +24,26 @@ final class NohupBackgroundRunner implements BackgroundRunner
             mkdir($dir, 0755, true);
         }
 
-        $log = fopen($logFile, 'a');
-
-        if ($log === false) {
-            throw new \RuntimeException("Cannot open agent log file: {$logFile}");
-        }
-
-        $descriptors = [
-            0 => ['file', '/dev/null', 'r'],
-            1 => $log,
-            2 => $log,
-        ];
-
-        $handle = proc_open(['nohup', ...$command], $descriptors, $pipes, $cwd);
+        $handle = proc_open(
+            ['/bin/sh', '-c', 'nohup "$@" >> "$0" 2>&1 & echo $!', $logFile, ...$command],
+            [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+            $pipes,
+            $cwd,
+        );
 
         if (! is_resource($handle)) {
-            fclose($log);
-
             throw new \RuntimeException('Failed to start background agent process.');
         }
 
-        $pid = proc_get_status($handle)['pid'];
+        $pid = (int) trim(stream_get_contents($pipes[1]));
 
-        // The child holds its own dup'd fd, so the parent handle can close.
-        // Deliberately no proc_close(): it would wait for the (long-running)
-        // agent. nohup keeps it alive past CLI exit.
-        fclose($log);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($handle); // the shell has already returned — this does not block
+
+        if ($pid <= 0) {
+            throw new \RuntimeException('Could not determine background agent PID.');
+        }
 
         return $pid;
     }
