@@ -18,6 +18,10 @@ final class NohupBackgroundRunner implements BackgroundRunner
 {
     public function start(array $command, ?string $cwd, string $logFile): int
     {
+        if ($command === []) {
+            throw new \InvalidArgumentException('Cannot start a background process without a command.');
+        }
+
         $dir = dirname($logFile);
 
         if (! is_dir($dir)) {

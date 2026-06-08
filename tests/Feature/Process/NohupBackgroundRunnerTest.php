@@ -33,3 +33,8 @@ test('start detaches a real process: returns immediately with a live pid', funct
 test('isRunning is false for an invalid pid', function () {
     expect((new NohupBackgroundRunner)->isRunning(0))->toBeFalse();
 });
+
+test('start rejects an empty command', function () {
+    expect(fn () => (new NohupBackgroundRunner)->start([], $this->tmp, $this->tmp . '/x.log'))
+        ->toThrow(\InvalidArgumentException::class);
+});
