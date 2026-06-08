@@ -2,13 +2,14 @@
 
 namespace App\Commands;
 
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
 use App\Support\BeeStatus;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
-use Symfony\Component\Process\Process;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\spin;
@@ -22,6 +23,11 @@ class PrCommand extends Command
                             {--base=main : Base branch for the PR}';
 
     protected $description = 'Commit, push and create pull requests for worktree branches';
+
+    public function __construct(private readonly ProcessRunner $process = new SymfonyProcessRunner)
+    {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -162,19 +168,17 @@ class PrCommand extends Command
         $title = $this->generatePrTitle($target);
         $body = $this->generatePrBody($target, $path);
 
-        $process = new Process([
+        $result = $this->process->run([
             'gh', 'pr', 'create',
             '--repo', $this->getRepoName($path),
             '--head', $branchName,
             '--base', $base,
             '--title', $title,
             '--body', $body,
-        ], $path);
-        $process->setTimeout(30);
-        $process->run();
+        ], $path, 30);
 
-        if (! $process->isSuccessful()) {
-            $error = $process->getErrorOutput();
+        if (! $result->successful) {
+            $error = $result->errorOutput;
             // If PR already exists, that's OK
             if (str_contains($error, 'already exists')) {
                 $this->line('  ℹ️  PR already exists');
@@ -184,21 +188,19 @@ class PrCommand extends Command
             throw new \RuntimeException($error);
         }
 
-        $prUrl = trim($process->getOutput());
+        $prUrl = trim($result->output);
         $this->line("  🔗 {$prUrl}");
     }
 
     private function runGit(string $path, array $command): string
     {
-        $process = new Process($command, $path);
-        $process->setTimeout(60);
-        $process->run();
+        $result = $this->process->run($command, $path, 60);
 
-        if (! $process->isSuccessful()) {
-            throw new \RuntimeException($process->getErrorOutput());
+        if (! $result->successful) {
+            throw new \RuntimeException($result->errorOutput);
         }
 
-        return trim($process->getOutput());
+        return trim($result->output);
     }
 
     private function generateCommitMessage(array $target): string
@@ -238,11 +240,10 @@ class PrCommand extends Command
         $log = '';
 
         foreach (['main', 'master', 'develop'] as $base) {
-            $process = new Process(['git', 'log', '--oneline', "{$base}..HEAD"], $path);
-            $process->run();
+            $result = $this->process->run(['git', 'log', '--oneline', "{$base}..HEAD"], $path);
 
-            if ($process->isSuccessful() && trim($process->getOutput()) !== '') {
-                $log = trim($process->getOutput());
+            if ($result->successful && trim($result->output) !== '') {
+                $log = trim($result->output);
                 break;
             }
         }
@@ -266,17 +267,14 @@ class PrCommand extends Command
 
     private function getRepoName(string $path): string
     {
-        $process = new Process(['gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], $path);
-        $process->run();
+        $result = $this->process->run(['gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], $path);
 
-        if ($process->isSuccessful()) {
-            return trim($process->getOutput());
+        if ($result->successful) {
+            return trim($result->output);
         }
 
         // Fallback: parse from git remote
-        $process = new Process(['git', 'remote', 'get-url', 'origin'], $path);
-        $process->run();
-        $url = trim($process->getOutput());
+        $url = trim($this->process->run(['git', 'remote', 'get-url', 'origin'], $path)->output);
 
         // Extract owner/repo from URL
         if (preg_match('#(?:github\.com[:/])(.+?)(?:\.git)?$#', $url, $matches)) {
