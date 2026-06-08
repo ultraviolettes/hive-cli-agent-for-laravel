@@ -9,13 +9,15 @@ use App\Support\HiveContext;
 use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
+use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\spin;
 
 class RunCommand extends Command
 {
     protected $signature = 'run {branch : Branch/worktree to run the agent in}
                                 {--permission-mode= : Override the agent permission mode}
-                                {--timeout=1800 : Max seconds the agent may run}';
+                                {--timeout=1800 : Max seconds the agent may run}
+                                {--yes : Skip the bypassPermissions confirmation (for scripts/GUI)}';
 
     protected $description = 'Launch an autonomous Claude Code agent inside a worktree';
 
@@ -42,6 +44,13 @@ class RunCommand extends Command
         $state = new HiveState($context->path);
         $mode = $this->option('permission-mode') ?? $config->get('agent_permission_mode', 'bypassPermissions');
         $prompt = $this->buildPrompt($state->get($branch));
+
+        if ($mode === 'bypassPermissions' && ! $this->option('yes')
+            && ! confirm("⚠️  bypassPermissions lets the agent run ANY command in {$branch} without asking. Launch it?", default: false)) {
+            $this->line('Aborted.');
+
+            return self::SUCCESS;
+        }
 
         $this->warn("🐝 Launching agent in <comment>{$branch}</comment> (permission-mode: {$mode})");
 

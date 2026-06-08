@@ -29,7 +29,7 @@ test('run launches an agent in the worktree and records the session id', functio
 
     chdir($tmp);
 
-    $this->artisan('run', ['branch' => 'feat/x'])->assertExitCode(0);
+    $this->artisan('run', ['branch' => 'feat/x', '--yes' => true])->assertExitCode(0);
 
     expect((new HiveState($tmp))->get('feat/x')['session_id'])->toBe('sess-1');
 
@@ -38,6 +38,30 @@ test('run launches an agent in the worktree and records the session id', functio
         ->and($agentCall['cwd'])->toContain('feat-x')
         ->and($agentCall['command'])->toContain('--permission-mode')
         ->and($agentCall['command'])->toContain('bypassPermissions');
+
+    exec("rm -rf {$tmp}");
+});
+
+test('run aborts without launching when bypassPermissions is not confirmed', function () {
+    $tmp = sys_get_temp_dir() . '/hive-run-noyes-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} config user.email t@t.t");
+    exec("git -C {$tmp} config user.name t");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+    (new WorktreeManager($tmp))->spawn('feat/x');
+
+    $fake = new FakeProcessRunner;
+    app()->instance(ProcessRunner::class, $fake);
+
+    chdir($tmp);
+
+    // No --yes: the bypassPermissions confirmation defaults to "no" in the
+    // non-interactive test harness, so the agent must never be launched.
+    $this->artisan('run', ['branch' => 'feat/x'])->assertExitCode(0);
+
+    expect(collect($fake->calls)->contains(fn ($c) => in_array('-p', $c['command'], true)))->toBeFalse();
 
     exec("rm -rf {$tmp}");
 });

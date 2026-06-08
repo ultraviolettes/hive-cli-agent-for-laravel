@@ -25,7 +25,7 @@ final class AgentLauncher
     public function run(
         string $worktreePath,
         string $prompt,
-        string $permissionMode = 'bypassPermissions',
+        string $permissionMode = 'default',
         int $timeout = 1800,
     ): array {
         $command = [
