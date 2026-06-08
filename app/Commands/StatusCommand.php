@@ -7,6 +7,7 @@ use App\Services\WorktreeManager;
 use App\Support\BeeStatus;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
+use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
 class StatusCommand extends Command
@@ -27,32 +28,60 @@ class StatusCommand extends Command
         }
 
         $manager = new WorktreeManager($context->path);
+        $inspector = new WorktreeInspector;
+        $state = new HiveState($context->path);
+
         $worktrees = $manager->list();
 
-        if (empty($worktrees)) {
-            $this->line('No active worktrees. Run <comment>hive spawn <branch></comment> to start.');
+        // Planned tasks that have no worktree yet (blocked, awaiting spawn, or
+        // failed) — invisible in the live worktree view, read from the store.
+        $pending = array_values(array_filter(
+            $state->all(),
+            fn ($task) => ($task['runtime'] ?? 'planned') !== 'spawned',
+        ));
+
+        if (empty($worktrees) && empty($pending)) {
+            $this->line('No active worktrees or planned tasks. Run <comment>hive plan</comment> or <comment>hive spawn <branch></comment> to start.');
 
             return self::SUCCESS;
         }
 
-        $inspector = new WorktreeInspector;
+        if (! empty($worktrees)) {
+            $this->line('');
+            $this->line("🍯 <comment>{$config->get('project')}</comment> — Active Bees ({$this->countByStatus($worktrees, $inspector)})");
+            $this->line('');
 
-        $this->line('');
-        $this->line("🍯 <comment>{$config->get('project')}</comment> — Active Bees ({$this->countByStatus($worktrees, $inspector)})");
-        $this->line('');
+            $rows = [];
+            foreach ($worktrees as $worktree) {
+                $info = $inspector->inspect($worktree);
+                $rows[] = [
+                    $info['branch'],
+                    $info['agent'],
+                    $info['changes'],
+                    $info['last_commit'],
+                ];
+            }
 
-        $rows = [];
-        foreach ($worktrees as $worktree) {
-            $info = $inspector->inspect($worktree);
-            $rows[] = [
-                $info['branch'],
-                $info['agent'],
-                $info['changes'],
-                $info['last_commit'],
-            ];
+            $this->table(['Branch', 'Status', 'Changes', 'Last Commit'], $rows);
         }
 
-        $this->table(['Branch', 'Status', 'Changes', 'Last Commit'], $rows);
+        if (! empty($pending)) {
+            $this->line('');
+            $this->line('📋 <comment>Plan</comment> — not yet spawned (' . count($pending) . ')');
+            $this->line('');
+
+            $rows = [];
+            foreach ($pending as $task) {
+                $rows[] = [
+                    $task['branch_name'],
+                    $this->planStatusLabel($task),
+                    $task['priority'] ?? 0,
+                    $task['type'] ?? 'feature',
+                ];
+            }
+
+            $this->table(['Branch', 'Status', 'Priority', 'Type'], $rows);
+        }
 
         $this->line('');
         $this->line('Commands:');
@@ -60,6 +89,15 @@ class StatusCommand extends Command
         $this->line('  <comment>cd <path> && claude</comment>    — open an agent in a worktree');
 
         return self::SUCCESS;
+    }
+
+    private function planStatusLabel(array $task): string
+    {
+        if (($task['runtime'] ?? null) === 'failed') {
+            return '❌ failed';
+        }
+
+        return ($task['status'] ?? 'ready') === 'blocked' ? '🔒 blocked' : '🟡 ready';
     }
 
     private function countByStatus(array $worktrees, WorktreeInspector $inspector): string
