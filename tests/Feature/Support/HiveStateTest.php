@@ -111,6 +111,19 @@ test('markSpawned creates an entry for a manual spawn not in any plan', function
         ->and($state->get('feat/manual')['session_id'])->toBeNull();
 });
 
+test('markRun records the agent session id and keeps the task spawned', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'feat/x', 'title' => 'X', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ]);
+
+    $state->markRun('feat/x', 'sess-99');
+
+    $task = (new HiveState($this->tmp))->get('feat/x');
+    expect($task['session_id'])->toBe('sess-99')
+        ->and($task['runtime'])->toBe('spawned');
+});
+
 test('markFailed records the error against the task', function () {
     $state = new HiveState($this->tmp);
     $state->putPlan([

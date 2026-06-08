@@ -116,6 +116,18 @@ final class HiveState
     }
 
     /**
+     * Record that an autonomous agent ran in this worktree, capturing its
+     * Claude Code session id (resumable later via `claude --resume`).
+     */
+    public function markRun(string $branch, ?string $sessionId): void
+    {
+        $this->update($branch, [
+            'runtime' => 'spawned',
+            'session_id' => $sessionId,
+        ]);
+    }
+
+    /**
      * Flip a task's DAG status to ready (used when an unblocked task is spawned).
      */
     public function markReady(string $branch): void
