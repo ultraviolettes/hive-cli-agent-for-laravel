@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Process\BackgroundRunner;
+use App\Process\NohupBackgroundRunner;
 use App\Process\ProcessRunner;
 use App\Process\SymfonyProcessRunner;
 
@@ -17,7 +19,24 @@ final class AgentLauncher
     public function __construct(
         private readonly string $binary = 'claude',
         private readonly ProcessRunner $process = new SymfonyProcessRunner,
+        private readonly BackgroundRunner $background = new NohupBackgroundRunner,
     ) {}
+
+    /**
+     * Start an agent detached in the worktree, streaming output to $logFile.
+     * Returns the OS process id; nothing is waited on, so several agents can
+     * run in parallel.
+     */
+    public function launchBackground(
+        string $worktreePath,
+        string $prompt,
+        string $permissionMode,
+        string $logFile,
+    ): int {
+        $command = [$this->binary, '-p', $prompt, '--permission-mode', $permissionMode];
+
+        return $this->background->start($command, $worktreePath, $logFile);
+    }
 
     /**
      * @return array{successful: bool, session_id: ?string, result: string, cost_usd: ?float, error: ?string}

@@ -141,6 +141,20 @@ test('markRun records the agent session id and keeps the task spawned', function
         ->and($task['runtime'])->toBe('spawned');
 });
 
+test('markRunning records the background pid and log path', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'feat/x', 'title' => 'X', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ]);
+
+    $state->markRunning('feat/x', 4242, '/p/.hive/logs/x.log');
+
+    $task = (new HiveState($this->tmp))->get('feat/x');
+    expect($task['runtime'])->toBe('running')
+        ->and($task['pid'])->toBe(4242)
+        ->and($task['log_path'])->toBe('/p/.hive/logs/x.log');
+});
+
 test('markFailed records the error against the task', function () {
     $state = new HiveState($this->tmp);
     $state->putPlan([
