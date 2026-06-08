@@ -32,8 +32,16 @@ final class AgentLauncher
         string $prompt,
         string $permissionMode,
         string $logFile,
+        ?string $sessionId = null,
     ): int {
         $command = [$this->binary, '-p', $prompt, '--permission-mode', $permissionMode];
+
+        // Pin the session id so it can be captured up front (background output
+        // isn't parsed) and the bee resumed later via `claude --resume`.
+        if ($sessionId !== null) {
+            $command[] = '--session-id';
+            $command[] = $sessionId;
+        }
 
         return $this->background->start($command, $worktreePath, $logFile);
     }

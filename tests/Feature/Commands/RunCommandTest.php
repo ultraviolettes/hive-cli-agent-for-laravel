@@ -89,7 +89,14 @@ test('run --background detaches the agent and records pid + log', function () {
     expect($task['runtime'])->toBe('running')
         ->and($task['pid'])->toBe(4242)
         ->and($task['log_path'])->toContain('feat-x.log')
+        ->and($task['session_id'])->not->toBeNull()
         ->and($bg->started)->toHaveCount(1);
+
+    // The captured session id is exactly the one pinned via --session-id.
+    $command = $bg->started[0]['command'];
+    $idx = array_search('--session-id', $command, true);
+    expect($idx)->not->toBeFalse()
+        ->and($command[$idx + 1])->toBe($task['session_id']);
 
     exec("rm -rf {$tmp}");
 });
@@ -116,7 +123,8 @@ test('run --all launches a background agent in every active worktree', function 
     expect($bg->started)->toHaveCount(2);
 
     $running = collect((new HiveState($tmp))->all())->filter(fn ($t) => $t['runtime'] === 'running');
-    expect($running)->toHaveCount(2);
+    expect($running)->toHaveCount(2)
+        ->and($running->every(fn ($t) => ! empty($t['session_id'])))->toBeTrue();
 
     exec("rm -rf {$tmp}");
 });

@@ -172,15 +172,22 @@ final class HiveState
     }
 
     /**
-     * Record a detached agent running in the background (its PID + log file).
+     * Record a detached agent running in the background (its PID + log file,
+     * and the session id it was pinned to when known).
      */
-    public function markRunning(string $branch, int $pid, string $logPath): void
+    public function markRunning(string $branch, int $pid, string $logPath, ?string $sessionId = null): void
     {
-        $this->update($branch, [
+        $changes = [
             'runtime' => 'running',
             'pid' => $pid,
             'log_path' => $logPath,
-        ]);
+        ];
+
+        if ($sessionId !== null) {
+            $changes['session_id'] = $sessionId;
+        }
+
+        $this->update($branch, $changes);
     }
 
     /**

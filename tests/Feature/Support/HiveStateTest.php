@@ -155,6 +155,17 @@ test('markRunning records the background pid and log path', function () {
         ->and($task['log_path'])->toBe('/p/.hive/logs/x.log');
 });
 
+test('markRunning can also record the session id', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'feat/x', 'title' => 'X', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ]);
+
+    $state->markRunning('feat/x', 100, '/log', 'sess-9');
+
+    expect((new HiveState($this->tmp))->get('feat/x')['session_id'])->toBe('sess-9');
+});
+
 test('markFailed records the error against the task', function () {
     $state = new HiveState($this->tmp);
     $state->putPlan([

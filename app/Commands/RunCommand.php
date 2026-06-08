@@ -114,10 +114,11 @@ class RunCommand extends Command
     private function runBackground(HiveContext $context, HiveState $state, string $branch, string $path, string $mode): int
     {
         $log = $this->logPath($context, $branch);
-        $pid = app(AgentLauncher::class)->launchBackground($path, $this->buildPrompt($state->get($branch)), $mode, $log);
-        $state->markRunning($branch, $pid, $log);
+        $sessionId = (string) Str::uuid();
+        $pid = app(AgentLauncher::class)->launchBackground($path, $this->buildPrompt($state->get($branch)), $mode, $log, $sessionId);
+        $state->markRunning($branch, $pid, $log, $sessionId);
 
-        $this->info("🐝 Agent detached for <comment>{$branch}</comment> (pid {$pid})");
+        $this->info("🐝 Agent detached for <comment>{$branch}</comment> (pid {$pid}, session {$sessionId})");
         $this->line("   log: {$log}");
 
         return self::SUCCESS;
@@ -149,10 +150,11 @@ class RunCommand extends Command
             }
 
             $log = $this->logPath($context, $branch);
-            $pid = $launcher->launchBackground($worktree['path'], $this->buildPrompt($existing), $mode, $log);
-            $state->markRunning($branch, $pid, $log);
+            $sessionId = (string) Str::uuid();
+            $pid = $launcher->launchBackground($worktree['path'], $this->buildPrompt($existing), $mode, $log, $sessionId);
+            $state->markRunning($branch, $pid, $log, $sessionId);
 
-            $this->line("  🐝 <comment>{$branch}</comment> → pid {$pid}");
+            $this->line("  🐝 <comment>{$branch}</comment> → pid {$pid} (session {$sessionId})");
             $launched++;
         }
 
