@@ -53,3 +53,13 @@ test('launchBackground starts a detached agent in the worktree and returns its p
         ->and($started['command'])->toContain('--permission-mode')
         ->and($started['command'])->toContain('bypassPermissions');
 });
+
+test('launchBackground pins the provided session id', function () {
+    $background = new FakeBackgroundRunner;
+    $launcher = new AgentLauncher('claude', new FakeProcessRunner, $background);
+
+    $launcher->launchBackground('/wt/x', 'go', 'bypassPermissions', '/wt/x/log', 'sess-uuid-1');
+
+    expect($background->started[0]['command'])->toContain('--session-id')
+        ->and($background->started[0]['command'])->toContain('sess-uuid-1');
+});
