@@ -126,6 +126,16 @@ test('run --all launches a background agent in every active worktree', function 
     expect($running)->toHaveCount(2)
         ->and($running->every(fn ($t) => ! empty($t['session_id'])))->toBeTrue();
 
+    // Each agent gets a distinct session id, and the stored ids are exactly the
+    // ones passed via --session-id.
+    $passed = collect($bg->started)->map(function ($s) {
+        $i = array_search('--session-id', $s['command'], true);
+
+        return $s['command'][$i + 1];
+    });
+    expect($passed->unique())->toHaveCount(2)
+        ->and($passed->sort()->values()->all())->toBe($running->pluck('session_id')->sort()->values()->all());
+
     exec("rm -rf {$tmp}");
 });
 
