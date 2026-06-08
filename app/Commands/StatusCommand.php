@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Services\BeeRoleInferer;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
 use App\Support\BeeStatus;
@@ -30,6 +31,8 @@ class StatusCommand extends Command
         $manager = new WorktreeManager($context->path);
         $inspector = new WorktreeInspector;
         $state = new HiveState($context->path);
+        // Complete roles/bee_ids for any task written before roles existed.
+        $state->backfill(app(BeeRoleInferer::class));
 
         $worktrees = $manager->list();
 
@@ -55,15 +58,18 @@ class StatusCommand extends Command
             $rows = [];
             foreach ($worktrees as $worktree) {
                 $info = $inspector->inspect($worktree);
+                $task = $state->get($info['branch']);
                 $rows[] = [
                     $info['branch'],
+                    $task['role'] ?? '—',
+                    $task['bee_id'] ?? '—',
                     $info['agent'],
                     $info['changes'],
                     $info['last_commit'],
                 ];
             }
 
-            $this->table(['Branch', 'Status', 'Changes', 'Last Commit'], $rows);
+            $this->table(['Branch', 'Role', 'Bee', 'Status', 'Changes', 'Last Commit'], $rows);
         }
 
         if (! empty($pending)) {
@@ -75,13 +81,14 @@ class StatusCommand extends Command
             foreach ($pending as $task) {
                 $rows[] = [
                     $task['branch_name'],
+                    $task['role'] ?? '—',
+                    $task['bee_id'] ?? '—',
                     $this->planStatusLabel($task),
                     $task['priority'] ?? 0,
-                    $task['type'] ?? 'feature',
                 ];
             }
 
-            $this->table(['Branch', 'Status', 'Priority', 'Type'], $rows);
+            $this->table(['Branch', 'Role', 'Bee', 'Status', 'Priority'], $rows);
         }
 
         $this->line('');

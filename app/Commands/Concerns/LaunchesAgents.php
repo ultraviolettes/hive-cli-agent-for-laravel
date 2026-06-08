@@ -3,6 +3,7 @@
 namespace App\Commands\Concerns;
 
 use App\Services\AgentLauncher;
+use App\Services\BeeRoleInferer;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use App\Support\HiveState;
@@ -42,6 +43,10 @@ trait LaunchesAgents
      */
     protected function launchBee(HiveContext $context, HiveState $state, string $branch, string $path, string $mode): array
     {
+        // Make sure this branch has a role + bee_id even if it was spawned
+        // ad-hoc (not via a plan).
+        $state->ensureRole($branch, app(BeeRoleInferer::class));
+
         $log = $context->path . '/.hive/logs/' . Str::slug(str_replace('/', '-', $branch)) . '.log';
         $sessionId = (string) Str::uuid();
         $pid = app(AgentLauncher::class)->launchBackground($path, $this->beePrompt($state->get($branch)), $mode, $log, $sessionId);

@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Services\BeeRoleInferer;
+
 /**
  * Persistent, mutable task state for a Hive project, stored in
  * .hive/state.json (separate from the user-editable .hive.json config).
@@ -37,7 +39,7 @@ final class HiveState
      *
      * @param  array<int, array<string, mixed>>  $tasks
      */
-    public function putPlan(array $tasks): void
+    public function putPlan(array $tasks, ?BeeRoleInferer $roleInferer = null): void
     {
         // Map the plan's positional indices to branch names so dependencies are
         // stored as resolvable branch references rather than fragile indices.
@@ -47,9 +49,11 @@ final class HiveState
 
         foreach ($tasks as $task) {
             $branch = $task['branch_name'];
+            $existing = $this->tasks[$branch] ?? [];
+
             $next[$branch] = array_merge(
                 $this->defaults($branch),
-                $this->tasks[$branch] ?? [],
+                $existing,
                 [
                     'branch_name' => $branch,
                     'title' => $task['title'] ?? '',
@@ -58,14 +62,83 @@ final class HiveState
                     'type' => $task['type'] ?? 'feature',
                     'depends_on' => $this->resolveDependencies($task['depends_on'] ?? [], $branchByIndex),
                     'status' => $task['status'] ?? 'ready',
+                    'role' => $this->resolveRole($existing, $task, $roleInferer)->value,
                 ],
             );
         }
 
+        $next = $this->assignBeeIds($next);
         $this->assertAcyclic($next);
 
         $this->tasks = $next;
         $this->save();
+    }
+
+    /**
+     * Resolve a task's role. An existing valid role is kept (stable: a re-plan
+     * never silently changes it); otherwise it is inferred, or defaults to
+     * Fullstack when no inferer is supplied.
+     *
+     * @param  array<string, mixed>  $existing
+     * @param  array<string, mixed>  $task
+     */
+    private function resolveRole(array $existing, array $task, ?BeeRoleInferer $inferer): BeeRole
+    {
+        $existingRole = BeeRole::tryFromName($existing['role'] ?? null);
+        if ($existingRole !== null) {
+            return $existingRole;
+        }
+
+        if ($inferer !== null) {
+            return $inferer->infer($task);
+        }
+
+        return BeeRole::tryFromName($task['role'] ?? null) ?? BeeRole::Fullstack;
+    }
+
+    /**
+     * Give every task a stable bee_id (`<role>-<n>`). Existing ids are kept;
+     * new ones continue the per-role numbering without collisions.
+     *
+     * @param  array<string, array<string, mixed>>  $tasks
+     * @return array<string, array<string, mixed>>
+     */
+    private function assignBeeIds(array $tasks): array
+    {
+        $used = [];
+        foreach ($tasks as $task) {
+            if (! empty($task['bee_id'])) {
+                $used[$task['bee_id']] = true;
+            }
+        }
+
+        foreach ($tasks as $branch => $task) {
+            if (empty($task['bee_id'])) {
+                $role = BeeRole::tryFromName($task['role'] ?? null) ?? BeeRole::Fullstack;
+                $beeId = $this->nextBeeId($role, $used);
+                $used[$beeId] = true;
+                $tasks[$branch]['bee_id'] = $beeId;
+            }
+        }
+
+        return $tasks;
+    }
+
+    /**
+     * @param  array<string, bool>  $used
+     */
+    private function nextBeeId(BeeRole $role, array $used): string
+    {
+        $prefix = $role->value . '-';
+        $max = 0;
+
+        foreach (array_keys($used) as $id) {
+            if (is_string($id) && str_starts_with($id, $prefix)) {
+                $max = max($max, (int) substr($id, strlen($prefix)));
+            }
+        }
+
+        return $prefix . ($max + 1);
     }
 
     /**
@@ -203,6 +276,58 @@ final class HiveState
     }
 
     /**
+     * Complete any tasks missing a role or bee_id (e.g. state written before
+     * roles existed). Idempotent; only saves when something changed.
+     */
+    public function backfill(BeeRoleInferer $inferer): void
+    {
+        $changed = false;
+
+        foreach ($this->tasks as $branch => $task) {
+            if (BeeRole::tryFromName($task['role'] ?? null) === null) {
+                $this->tasks[$branch]['role'] = $inferer->infer($task)->value;
+                $changed = true;
+            }
+        }
+
+        $assigned = $this->assignBeeIds($this->tasks);
+        if ($changed || $assigned !== $this->tasks) {
+            $this->tasks = $assigned;
+            $this->save();
+        }
+    }
+
+    /**
+     * Ensure a single branch has a role and bee_id, creating the task entry if
+     * needed (used by ad-hoc spawn/run on branches not produced by a plan). The
+     * branch name seeds inference when there is no description.
+     */
+    public function ensureRole(string $branch, BeeRoleInferer $inferer): void
+    {
+        $task = $this->tasks[$branch] ?? null;
+        $hasRole = $task !== null && BeeRole::tryFromName($task['role'] ?? null) !== null;
+        $hasBee = $task !== null && ! empty($task['bee_id']);
+
+        if ($hasRole && $hasBee) {
+            return;
+        }
+
+        $task ??= $this->defaults($branch);
+        $task['branch_name'] = $branch;
+
+        if (BeeRole::tryFromName($task['role'] ?? null) === null) {
+            $task['role'] = $inferer->infer([
+                'title' => $task['title'] ?? '',
+                'description' => trim(($task['description'] ?? '') . ' ' . str_replace(['/', '-'], ' ', $branch)),
+            ])->value;
+        }
+
+        $this->tasks[$branch] = $task;
+        $this->tasks = $this->assignBeeIds($this->tasks);
+        $this->save();
+    }
+
+    /**
      * Blocked, not-yet-spawned tasks whose every dependency is merged — i.e.
      * the next wave the DAG can execute.
      *
@@ -288,6 +413,8 @@ final class HiveState
             'description' => '',
             'priority' => 0,
             'type' => 'feature',
+            'role' => null,
+            'bee_id' => null,
             'depends_on' => [],
             'status' => 'ready',
             'runtime' => 'planned',

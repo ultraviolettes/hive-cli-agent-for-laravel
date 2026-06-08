@@ -40,7 +40,7 @@ test('plan --run spawns and launches a background agent', function () {
     $fakeDag = Mockery::mock(DagProvider::class);
     $fakeDag->shouldReceive('analyze')->andReturn([
         'tasks' => [
-            ['title' => 'Fix', 'description' => 'do it', 'priority' => 100, 'depends_on' => [], 'branch_name' => 'fix/a', 'status' => 'ready', 'type' => 'security'],
+            ['title' => 'Fix the auth token leak', 'description' => 'csrf', 'priority' => 100, 'depends_on' => [], 'branch_name' => 'fix/a', 'status' => 'ready', 'type' => 'security'],
         ],
     ]);
     app()->instance(DagProvider::class, $fakeDag);
@@ -62,6 +62,8 @@ test('plan --run spawns and launches a background agent', function () {
 
     $task = (new HiveState($tmp))->get('fix/a');
     expect($task['runtime'])->toBe('running')
+        ->and($task['role'])->toBe('security')
+        ->and($task['bee_id'])->toBe('security-1')
         ->and($task['session_id'])->not->toBeNull()
         ->and($bg->started)->toHaveCount(1)
         ->and(is_dir($tmp . '/.hive/worktrees/fix-a'))->toBeTrue();
