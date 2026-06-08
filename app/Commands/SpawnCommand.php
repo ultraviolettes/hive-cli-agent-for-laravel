@@ -2,10 +2,12 @@
 
 namespace App\Commands;
 
+use App\Services\BeeRoleInferer;
 use App\Services\ContextBuilder;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
+use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\spin;
@@ -47,8 +49,15 @@ class SpawnCommand extends Command
             $this->line('✅ CLAUDE.md injected with task context');
         }
 
+        // Record the bee (role + bee_id) so it shows up in status and the GUI.
+        $state = new HiveState($hive->path);
+        $state->markSpawned($branch, $path);
+        $state->ensureRole($branch, app(BeeRoleInferer::class));
+        $bee = $state->get($branch);
+
         $this->line('');
         $this->info("✅ Worktree ready at: <comment>{$path}</comment>");
+        $this->line("   role: <comment>{$bee['role']}</comment> · bee: <comment>{$bee['bee_id']}</comment>");
         $this->line('');
         $this->line('Open in Superset or run:');
         $this->line("  <comment>cd {$path} && claude</comment>");

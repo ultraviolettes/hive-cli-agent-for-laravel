@@ -3,6 +3,7 @@
 namespace App\Runners;
 
 use App\Contracts\DagProvider;
+use App\Services\BeeRoleInferer;
 use App\Services\ContextBuilder;
 use App\Services\WorktreeManager;
 use App\Support\HiveState;
@@ -23,6 +24,7 @@ final class PlanRunner
         private readonly WorktreeManager $manager,
         private readonly ContextBuilder $builder,
         private readonly ?HiveState $state = null,
+        private readonly BeeRoleInferer $roleInferer = new BeeRoleInferer,
     ) {}
 
     /**
@@ -35,7 +37,7 @@ final class PlanRunner
     {
         $tasks = $this->analyzer->analyze($rawText, $anthropicApiKey)['tasks'];
 
-        $this->state?->putPlan($tasks);
+        $this->state?->putPlan($tasks, $this->roleInferer);
 
         return $tasks;
     }

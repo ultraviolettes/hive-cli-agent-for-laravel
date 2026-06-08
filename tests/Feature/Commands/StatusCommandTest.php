@@ -1,6 +1,8 @@
 <?php
 
+use App\Services\BeeRoleInferer;
 use App\Support\HiveState;
+use Illuminate\Support\Facades\Artisan;
 
 test('status surfaces planned-but-not-spawned tasks (including blocked) from the state store', function () {
     $tmp = sys_get_temp_dir() . '/hive-status-' . uniqid();
@@ -21,6 +23,30 @@ test('status surfaces planned-but-not-spawned tasks (including blocked) from the
         ->assertExitCode(0)
         ->expectsOutputToContain('feat/dep')
         ->expectsOutputToContain('fix/cve');
+
+    exec("rm -rf {$tmp}");
+});
+
+test('status shows the role and bee_id of planned tasks', function () {
+    $tmp = sys_get_temp_dir() . '/hive-status-role-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    (new HiveState($tmp))->putPlan([
+        ['branch_name' => 'qa/checkout', 'title' => 'Add Pest tests', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+
+    chdir($tmp);
+
+    // Capture the full buffered output: expectsOutputToContain only reliably
+    // matches the first table column, but role/bee_id live in later columns.
+    Artisan::call('status');
+    $output = Artisan::output();
+
+    expect($output)->toContain('qa/checkout')
+        ->and($output)->toContain('qa')
+        ->and($output)->toContain('qa-1');
 
     exec("rm -rf {$tmp}");
 });
