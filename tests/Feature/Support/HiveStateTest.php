@@ -254,6 +254,29 @@ test('a launched task exposes bee_id, role, session_id, pid and log_path', funct
         ->and($task['session_id'])->toBe('sess-uuid');
 });
 
+test('ensureRole assigns a role and bee_id to an unknown ad-hoc branch', function () {
+    $state = new HiveState($this->tmp);
+
+    $state->ensureRole('fix/auth-token', new BeeRoleInferer);
+
+    $task = $state->get('fix/auth-token');
+    expect($task['role'])->toBe('security')   // inferred from the branch name
+        ->and($task['bee_id'])->toBe('security-1');
+});
+
+test('ensureRole is idempotent and keeps an existing role + bee_id', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'qa/x', 'title' => 'Add Pest tests', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+
+    $state->ensureRole('qa/x', new BeeRoleInferer);
+
+    $task = (new HiveState($this->tmp))->get('qa/x');
+    expect($task['role'])->toBe('qa')
+        ->and($task['bee_id'])->toBe('qa-1');
+});
+
 test('markFailed records the error against the task', function () {
     $state = new HiveState($this->tmp);
     $state->putPlan([
