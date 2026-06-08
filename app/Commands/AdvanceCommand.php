@@ -69,6 +69,10 @@ class AdvanceCommand extends Command
         $mode = $this->permissionMode($config);
         $autoRun = $this->option('run') && $this->confirmBypass($mode);
 
+        if ($this->option('run') && ! $autoRun) {
+            $this->warn('--run ignored: bypassPermissions not confirmed. Spawning worktrees only.');
+        }
+
         $this->line('');
         foreach ($unblockable as $task) {
             $result = spin(

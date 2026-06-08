@@ -125,6 +125,10 @@ class FixCommand extends Command
         $mode = $this->permissionMode($config);
         $autoRun = $this->option('run') && $this->confirmBypass($mode);
 
+        if ($this->option('run') && ! $autoRun) {
+            $this->warn('--run ignored: bypassPermissions not confirmed. Spawning worktrees only.');
+        }
+
         foreach ($readyTasks as $task) {
             $result = spin(
                 fn () => $runner->spawnTask($task, $stack, 'bug'),

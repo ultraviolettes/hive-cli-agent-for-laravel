@@ -2,6 +2,7 @@
 
 use App\Contracts\DagProvider;
 use App\Process\BackgroundRunner;
+use App\Services\WorktreeManager;
 use App\Support\HiveState;
 use Tests\Support\FakeBackgroundRunner;
 
@@ -64,6 +65,39 @@ test('plan --run spawns and launches a background agent', function () {
         ->and($task['session_id'])->not->toBeNull()
         ->and($bg->started)->toHaveCount(1)
         ->and(is_dir($tmp . '/.hive/worktrees/fix-a'))->toBeTrue();
+
+    exec("rm -rf {$tmp}");
+});
+
+test('plan --run does not launch an agent when the spawn fails', function () {
+    $fakeDag = Mockery::mock(DagProvider::class);
+    $fakeDag->shouldReceive('analyze')->andReturn([
+        'tasks' => [
+            ['title' => 'Dup', 'description' => 'd', 'priority' => 1, 'depends_on' => [], 'branch_name' => 'fix/dup', 'status' => 'ready', 'type' => 'bug'],
+        ],
+    ]);
+    app()->instance(DagProvider::class, $fakeDag);
+
+    $bg = new FakeBackgroundRunner;
+    app()->instance(BackgroundRunner::class, $bg);
+
+    $tmp = sys_get_temp_dir() . '/hive-planrunfail-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} config user.email t@t.t");
+    exec("git -C {$tmp} config user.name t");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    // Pre-create the worktree so the plan's spawn of the same branch fails.
+    (new WorktreeManager($tmp))->spawn('fix/dup');
+
+    chdir($tmp);
+
+    $this->artisan('plan', ['--text' => 'x', '--run' => true, '--yes' => true])->assertExitCode(0);
+
+    expect($bg->started)->toBeEmpty()
+        ->and((new HiveState($tmp))->get('fix/dup')['runtime'])->toBe('failed');
 
     exec("rm -rf {$tmp}");
 });
