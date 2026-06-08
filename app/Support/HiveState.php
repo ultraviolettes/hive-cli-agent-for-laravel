@@ -62,6 +62,8 @@ final class HiveState
             );
         }
 
+        $this->assertAcyclic($next);
+
         $this->tasks = $next;
         $this->save();
     }
@@ -76,12 +78,54 @@ final class HiveState
      */
     private function resolveDependencies(array $dependsOn, array $branchByIndex): array
     {
-        $branches = array_map(
-            fn ($dep) => is_int($dep) ? ($branchByIndex[$dep] ?? null) : $dep,
-            $dependsOn,
-        );
+        $branches = [];
 
-        return array_values(array_filter($branches));
+        foreach ($dependsOn as $dep) {
+            if (is_int($dep)) {
+                if (! isset($branchByIndex[$dep])) {
+                    throw new \RuntimeException("Invalid dependency index {$dep} in the plan.");
+                }
+                $branches[] = $branchByIndex[$dep];
+            } elseif ($dep !== null && $dep !== '') {
+                $branches[] = $dep;
+            }
+        }
+
+        return array_values(array_unique($branches));
+    }
+
+    /**
+     * Reject a plan whose dependencies form a cycle — otherwise the involved
+     * tasks would stay blocked forever with no error.
+     *
+     * @param  array<string, array<string, mixed>>  $tasks
+     */
+    private function assertAcyclic(array $tasks): void
+    {
+        $visiting = [];
+        $visited = [];
+
+        $visit = function (string $branch) use (&$visit, &$visiting, &$visited, $tasks): void {
+            if (isset($visited[$branch])) {
+                return;
+            }
+            if (isset($visiting[$branch])) {
+                throw new \RuntimeException("Dependency cycle detected in the plan involving '{$branch}'.");
+            }
+
+            $visiting[$branch] = true;
+            foreach ($tasks[$branch]['depends_on'] ?? [] as $dependency) {
+                if (isset($tasks[$dependency])) {
+                    $visit($dependency);
+                }
+            }
+            unset($visiting[$branch]);
+            $visited[$branch] = true;
+        };
+
+        foreach (array_keys($tasks) as $branch) {
+            $visit($branch);
+        }
     }
 
     public function markSpawned(string $branch, string $worktreePath, ?string $sessionId = null): void

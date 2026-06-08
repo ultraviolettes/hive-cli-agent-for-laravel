@@ -35,6 +35,23 @@ test('stores dependencies as resolved branch names, not plan indices', function 
     expect($state->get('feat/b')['depends_on'])->toBe(['fix/a']);
 });
 
+test('putPlan rejects a dependency cycle', function () {
+    $state = new HiveState($this->tmp);
+
+    expect(fn () => $state->putPlan([
+        ['branch_name' => 'a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [1], 'status' => 'blocked'],
+        ['branch_name' => 'b', 'title' => 'B', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [0], 'status' => 'blocked'],
+    ]))->toThrow(\RuntimeException::class);
+});
+
+test('putPlan rejects an out-of-range dependency index', function () {
+    $state = new HiveState($this->tmp);
+
+    expect(fn () => $state->putPlan([
+        ['branch_name' => 'a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [99], 'status' => 'blocked'],
+    ]))->toThrow(\RuntimeException::class);
+});
+
 test('unblockable returns blocked tasks once every dependency is merged', function () {
     $state = new HiveState($this->tmp);
     $state->putPlan([
