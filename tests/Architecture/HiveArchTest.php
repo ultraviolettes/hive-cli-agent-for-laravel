@@ -2,7 +2,8 @@
 
 arch('commands are in Commands namespace')
     ->expect('App\Commands')
-    ->toExtend(\LaravelZero\Framework\Commands\Command::class);
+    ->toExtend(\LaravelZero\Framework\Commands\Command::class)
+    ->ignoring('App\Commands\Concerns');
 
 arch('services are classes')
     ->expect('App\Services')

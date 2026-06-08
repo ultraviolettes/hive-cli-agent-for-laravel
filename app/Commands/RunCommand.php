@@ -2,20 +2,21 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\LaunchesAgents;
 use App\Process\BackgroundRunner;
 use App\Services\AgentLauncher;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use App\Support\HiveState;
-use Illuminate\Support\Str;
 use LaravelZero\Framework\Commands\Command;
 
-use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\spin;
 
 class RunCommand extends Command
 {
+    use LaunchesAgents;
+
     protected $signature = 'run {branch? : Branch/worktree to run the agent in}
                                 {--all : Run an agent in every active worktree, in the background}
                                 {--background : Detach the agent and return immediately}
@@ -46,10 +47,10 @@ class RunCommand extends Command
 
         $state = new HiveState($context->path);
         $manager = new WorktreeManager($context->path);
-        $mode = $this->option('permission-mode') ?? $config->get('agent_permission_mode', 'bypassPermissions');
+        $mode = $this->permissionMode($config);
 
         if ($this->option('all')) {
-            if (! $this->confirmMode($mode)) {
+            if (! $this->confirmBypass($mode)) {
                 $this->line('Aborted.');
 
                 return self::SUCCESS;
@@ -66,7 +67,7 @@ class RunCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $this->confirmMode($mode)) {
+        if (! $this->confirmBypass($mode)) {
             $this->line('Aborted.');
 
             return self::SUCCESS;
@@ -82,7 +83,7 @@ class RunCommand extends Command
         $this->warn("🐝 Launching agent in <comment>{$branch}</comment> (permission-mode: {$mode})");
 
         $outcome = spin(
-            fn () => app(AgentLauncher::class)->run($path, $this->buildPrompt($state->get($branch)), $mode, (int) $this->option('timeout')),
+            fn () => app(AgentLauncher::class)->run($path, $this->beePrompt($state->get($branch)), $mode, (int) $this->option('timeout')),
             "Agent working on {$branch}..."
         );
 
@@ -113,13 +114,10 @@ class RunCommand extends Command
 
     private function runBackground(HiveContext $context, HiveState $state, string $branch, string $path, string $mode): int
     {
-        $log = $this->logPath($context, $branch);
-        $sessionId = (string) Str::uuid();
-        $pid = app(AgentLauncher::class)->launchBackground($path, $this->buildPrompt($state->get($branch)), $mode, $log, $sessionId);
-        $state->markRunning($branch, $pid, $log, $sessionId);
+        $bee = $this->launchBee($context, $state, $branch, $path, $mode);
 
-        $this->info("🐝 Agent detached for <comment>{$branch}</comment> (pid {$pid}, session {$sessionId})");
-        $this->line("   log: {$log}");
+        $this->info("🐝 Agent detached for <comment>{$branch}</comment> (pid {$bee['pid']}, session {$bee['session_id']})");
+        $this->line("   log: {$bee['log']}");
 
         return self::SUCCESS;
     }
@@ -134,7 +132,6 @@ class RunCommand extends Command
             return self::SUCCESS;
         }
 
-        $launcher = app(AgentLauncher::class);
         $background = app(BackgroundRunner::class);
         $launched = 0;
 
@@ -149,12 +146,8 @@ class RunCommand extends Command
                 continue;
             }
 
-            $log = $this->logPath($context, $branch);
-            $sessionId = (string) Str::uuid();
-            $pid = $launcher->launchBackground($worktree['path'], $this->buildPrompt($existing), $mode, $log, $sessionId);
-            $state->markRunning($branch, $pid, $log, $sessionId);
-
-            $this->line("  🐝 <comment>{$branch}</comment> → pid {$pid} (session {$sessionId})");
+            $bee = $this->launchBee($context, $state, $branch, $worktree['path'], $mode);
+            $this->line("  🐝 <comment>{$branch}</comment> → pid {$bee['pid']} (session {$bee['session_id']})");
             $launched++;
         }
 
@@ -162,33 +155,5 @@ class RunCommand extends Command
         $this->info("{$launched} agent(s) launched in parallel. Track them with hive status.");
 
         return self::SUCCESS;
-    }
-
-    private function confirmMode(string $mode): bool
-    {
-        if ($mode !== 'bypassPermissions' || $this->option('yes')) {
-            return true;
-        }
-
-        return confirm('⚠️  bypassPermissions lets the agent run ANY command without asking. Continue?', default: false);
-    }
-
-    private function logPath(HiveContext $context, string $branch): string
-    {
-        return $context->path . '/.hive/logs/' . Str::slug(str_replace('/', '-', $branch)) . '.log';
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $task
-     */
-    private function buildPrompt(?array $task): string
-    {
-        $description = $task['description'] ?? 'the task described in CLAUDE.md';
-
-        return 'You are an autonomous agent in an isolated git worktree. '
-            . "Read CLAUDE.md for the full context and rules, then complete this task:\n\n"
-            . $description
-            . "\n\nWhen done: make sure the test suite passes if one exists, then commit your "
-            . 'work with a conventional commit message. Do not open a pull request.';
     }
 }
