@@ -3,27 +3,29 @@
 namespace App\Services;
 
 use App\Ai\Agents\DagAnalyzerAgent;
+use App\Contracts\ClaudeCode;
+use App\Contracts\DagProvider;
 
-class DagAnalyzer
+final class DagAnalyzer implements DagProvider
 {
     public function __construct(
-        private readonly ClaudeCodeGateway $claude = new ClaudeCodeGateway,
+        private readonly ClaudeCode $claude = new ClaudeCodeGateway,
     ) {}
 
     /**
      * Analyze a backlog and return a structured DAG of tasks.
      *
      * Uses Claude Code CLI (headless) by default. Falls back to laravel/ai
-     * if ANTHROPIC_API_KEY is configured and Claude Code is not available.
+     * when an Anthropic API key is supplied and Claude Code is not available.
      */
-    public function analyze(string $rawText): array
+    public function analyze(string $rawText, ?string $anthropicApiKey = null): array
     {
         if ($this->claude->isAvailable()) {
             return $this->viaClaudeCode($rawText);
         }
 
-        if (! empty(config('prism.providers.anthropic.api_key'))) {
-            return $this->viaLaravelAi($rawText);
+        if (! empty($anthropicApiKey)) {
+            return $this->viaLaravelAi($rawText, $anthropicApiKey);
         }
 
         throw new \RuntimeException(
@@ -40,8 +42,14 @@ class DagAnalyzer
         return $this->claude->promptJson($prompt);
     }
 
-    private function viaLaravelAi(string $rawText): array
+    private function viaLaravelAi(string $rawText, string $anthropicApiKey): array
     {
+        // Inject the key at call time instead of mutating the global env at boot.
+        // Both config trees are set because laravel/ai reads `ai.*` while the
+        // underlying prism driver reads `prism.*`.
+        config()->set('ai.providers.anthropic.key', $anthropicApiKey);
+        config()->set('prism.providers.anthropic.api_key', $anthropicApiKey);
+
         $response = (new DagAnalyzerAgent)->prompt($rawText);
 
         return ['tasks' => $response['tasks']];

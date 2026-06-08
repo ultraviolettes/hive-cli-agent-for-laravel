@@ -2,12 +2,16 @@
 
 namespace App\Services;
 
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
 use Illuminate\Support\Str;
-use Symfony\Component\Process\Process;
 
 final class WorktreeManager
 {
-    public function __construct(private readonly string $projectPath) {}
+    public function __construct(
+        private readonly string $projectPath,
+        private readonly ProcessRunner $process = new SymfonyProcessRunner,
+    ) {}
 
     public function spawn(string $branch): string
     {
@@ -18,11 +22,10 @@ final class WorktreeManager
             mkdir($dir, 0755, true);
         }
 
-        $process = new Process(['git', 'worktree', 'add', $path, '-b', $branch], $this->projectPath);
-        $process->run();
+        $result = $this->process->run(['git', 'worktree', 'add', $path, '-b', $branch], $this->projectPath);
 
-        if (! $process->isSuccessful()) {
-            throw new \RuntimeException('Failed to create worktree: ' . $process->getErrorOutput());
+        if (! $result->successful) {
+            throw new \RuntimeException('Failed to create worktree: ' . $result->errorOutput);
         }
 
         return $path;
@@ -32,19 +35,25 @@ final class WorktreeManager
     {
         $path = $this->worktreePath($branch);
 
-        $process = new Process(['git', 'worktree', 'remove', $path, '--force'], $this->projectPath);
-        $process->run();
+        $result = $this->process->run(['git', 'worktree', 'remove', $path, '--force'], $this->projectPath);
+
+        if (! $result->successful) {
+            throw new \RuntimeException('Failed to remove worktree: ' . $result->errorOutput);
+        }
     }
 
     public function list(): array
     {
-        $process = new Process(['git', 'worktree', 'list', '--porcelain'], $this->projectPath);
-        $process->run();
+        $result = $this->process->run(['git', 'worktree', 'list', '--porcelain'], $this->projectPath);
+
+        if (! $result->successful) {
+            throw new \RuntimeException('Failed to list worktrees: ' . $result->errorOutput);
+        }
 
         $worktrees = [];
         $current = [];
 
-        foreach (explode("\n", $process->getOutput()) as $line) {
+        foreach (explode("\n", $result->output) as $line) {
             if (str_starts_with($line, 'worktree ')) {
                 if ($current) {
                     $worktrees[] = $current;

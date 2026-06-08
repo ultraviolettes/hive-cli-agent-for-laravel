@@ -2,11 +2,14 @@
 
 namespace App\Commands;
 
+use App\Contracts\DagProvider;
+use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
-use App\Services\DagAnalyzer;
 use App\Services\NightwatchIngester;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
+use App\Support\HiveContext;
+use App\Support\HiveState;
 use LaravelZero\Framework\Commands\Command;
 
 use function Laravel\Prompts\confirm;
@@ -24,7 +27,8 @@ class FixCommand extends Command
 
     public function handle(): int
     {
-        $config = new HiveConfig(getcwd());
+        $context = HiveContext::fromPath(getcwd());
+        $config = new HiveConfig($context->path);
         if (! $config->exists()) {
             $this->error('Run hive init first.');
 
@@ -37,8 +41,8 @@ class FixCommand extends Command
             return self::FAILURE;
         }
 
-        $token = env($config->get('nightwatch_token_env', 'NIGHTWATCH_TOKEN'));
-        $projectId = env('NIGHTWATCH_PROJECT_ID');
+        $token = $context->nightwatchToken();
+        $projectId = $context->nightwatchProjectId();
 
         if (! $token || ! $projectId) {
             $this->error('Set NIGHTWATCH_TOKEN and NIGHTWATCH_PROJECT_ID in your .env');
@@ -63,11 +67,16 @@ class FixCommand extends Command
         $this->line(count($exceptions) . ' unresolved exception(s) found.');
 
         $rawText = $ingester->formatForAnalysis($exceptions);
-        $analyzer = app(DagAnalyzer::class);
+        $runner = new PlanRunner(
+            app(DagProvider::class),
+            new WorktreeManager($context->path),
+            new ContextBuilder,
+            new HiveState($context->path),
+        );
 
         try {
-            $response = spin(
-                fn () => $analyzer->analyze($rawText),
+            $tasks = spin(
+                fn () => $runner->plan($rawText, $context->anthropicApiKey()),
                 '🐝 QueenBee is building the fix plan...'
             );
         } catch (\RuntimeException $e) {
@@ -75,7 +84,6 @@ class FixCommand extends Command
 
             return self::FAILURE;
         }
-        $tasks = $response['tasks'];
 
         $this->line('');
         $this->line("🔥 <comment>Fix plan — {$config->get('project')}</comment>");
@@ -98,7 +106,7 @@ class FixCommand extends Command
             return self::SUCCESS;
         }
 
-        $readyTasks = array_filter($tasks, fn ($t) => $t['status'] === 'ready');
+        $readyTasks = $runner->readyTasks($tasks);
         $this->line('');
         $this->line(count($readyTasks) . ' fix(es) ready to spawn.');
 
@@ -106,19 +114,19 @@ class FixCommand extends Command
             return self::SUCCESS;
         }
 
-        $manager = new WorktreeManager(getcwd());
-        $builder = new ContextBuilder;
+        $stack = $config->get('stack', []);
 
         foreach ($readyTasks as $task) {
-            spin(function () use ($manager, $builder, $task, $config) {
-                $path = $manager->spawn($task['branch_name']);
-                $builder->writeContext($path, $task['branch_name'], $task['description'], [
-                    'stack' => $config->get('stack', []),
-                    'type' => 'bug',
-                ]);
-            }, "Spawning {$task['branch_name']}...");
+            $result = spin(
+                fn () => $runner->spawnTask($task, $stack, 'bug'),
+                "Spawning {$task['branch_name']}..."
+            );
 
-            $this->line("  ✅ <comment>{$task['branch_name']}</comment>");
+            if ($result['error']) {
+                $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
+            } else {
+                $this->line("  ✅ <comment>{$result['branch']}</comment>");
+            }
         }
 
         $this->line('');

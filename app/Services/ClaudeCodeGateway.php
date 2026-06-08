@@ -2,29 +2,32 @@
 
 namespace App\Services;
 
-use Symfony\Component\Process\Process;
+use App\Contracts\ClaudeCode;
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
 
-class ClaudeCodeGateway
+final class ClaudeCodeGateway implements ClaudeCode
 {
-    public function __construct(private readonly string $binary = 'claude') {}
+    public function __construct(
+        private readonly string $binary = 'claude',
+        private readonly ProcessRunner $process = new SymfonyProcessRunner,
+    ) {}
 
     /**
      * Send a prompt to Claude Code in headless mode and return the result.
      */
     public function prompt(string $prompt): string
     {
-        $process = new Process([$this->binary, '-p', $prompt, '--output-format', 'json']);
-        $process->setTimeout(120);
-        $process->run();
+        $result = $this->process->run([$this->binary, '-p', $prompt, '--output-format', 'json'], null, 120);
 
-        if (! $process->isSuccessful()) {
-            throw new \RuntimeException('Claude Code error: ' . $process->getErrorOutput());
+        if (! $result->successful) {
+            throw new \RuntimeException('Claude Code error: ' . $result->errorOutput);
         }
 
-        $json = json_decode($process->getOutput(), true);
+        $json = json_decode($result->output, true);
 
         if (! $json || ! isset($json['result'])) {
-            throw new \RuntimeException('Unexpected Claude Code response: ' . $process->getOutput());
+            throw new \RuntimeException('Unexpected Claude Code response: ' . $result->output);
         }
 
         return $json['result'];
@@ -47,6 +50,10 @@ class ClaudeCodeGateway
             throw new \RuntimeException('Failed to parse Claude Code JSON response: ' . json_last_error_msg());
         }
 
+        if (! is_array($decoded)) {
+            throw new \RuntimeException('Expected a JSON object from Claude Code, got: ' . gettype($decoded));
+        }
+
         return $decoded;
     }
 
@@ -55,9 +62,6 @@ class ClaudeCodeGateway
      */
     public function isAvailable(): bool
     {
-        $process = new Process(['which', $this->binary]);
-        $process->run();
-
-        return $process->isSuccessful();
+        return $this->process->run(['which', $this->binary])->successful;
     }
 }

@@ -1,9 +1,10 @@
 <?php
 
-use App\Services\DagAnalyzer;
+use App\Contracts\DagProvider;
+use App\Support\HiveState;
 
 test('plan command shows execution plan with --dry-run', function () {
-    $fakeDag = Mockery::mock(DagAnalyzer::class);
+    $fakeDag = Mockery::mock(DagProvider::class);
     $fakeDag->shouldReceive('analyze')->once()->andReturn([
         'tasks' => [
             ['title' => 'Fix CVE', 'description' => 'Update deps', 'priority' => 100,
@@ -12,7 +13,7 @@ test('plan command shows execution plan with --dry-run', function () {
                 'depends_on' => [0], 'branch_name' => 'chore/deps', 'status' => 'blocked', 'type' => 'dependency'],
         ],
     ]);
-    app()->instance(DagAnalyzer::class, $fakeDag);
+    app()->instance(DagProvider::class, $fakeDag);
 
     $tmp = sys_get_temp_dir() . '/hive-plan-' . uniqid();
     mkdir($tmp);
@@ -22,6 +23,12 @@ test('plan command shows execution plan with --dry-run', function () {
 
     $this->artisan('plan', ['--text' => 'Fix CVE then update deps', '--dry-run' => true])
         ->assertExitCode(0);
+
+    // The command persisted the DAG to the state store, even in --dry-run.
+    expect(file_exists($tmp . '/.hive/state.json'))->toBeTrue();
+    $state = new HiveState($tmp);
+    expect($state->get('fix/cve'))->not->toBeNull()
+        ->and($state->get('chore/deps')['status'])->toBe('blocked');
 
     exec("rm -rf $tmp");
 });

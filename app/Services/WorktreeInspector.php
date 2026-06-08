@@ -2,10 +2,16 @@
 
 namespace App\Services;
 
-use Symfony\Component\Process\Process;
+use App\Process\ProcessRunner;
+use App\Process\SymfonyProcessRunner;
+use App\Support\BeeStatus;
 
 final class WorktreeInspector
 {
+    public function __construct(
+        private readonly ProcessRunner $process = new SymfonyProcessRunner,
+    ) {}
+
     /**
      * Get detailed status for a worktree.
      */
@@ -14,10 +20,15 @@ final class WorktreeInspector
         $path = $worktree['path'];
         $branch = $worktree['branch'] ?? '?';
 
+        $status = $this->detectAgent($path);
+        $commits = $status === BeeStatus::Done ? $this->getCommitCount($path) : 0;
+
         return [
             'branch' => $this->shortBranch($branch),
             'path' => $path,
-            'agent' => $this->detectAgent($path),
+            'status' => $status,
+            'commits' => $commits,
+            'agent' => $this->agentLabel($status, $commits),
             'changes' => $this->getChangeSummary($path),
             'last_commit' => $this->getLastCommit($path),
             'has_claude_md' => file_exists($path . '/CLAUDE.md'),
@@ -35,32 +46,38 @@ final class WorktreeInspector
     /**
      * Detect if a Claude Code process is running in this worktree.
      */
-    private function detectAgent(string $path): string
+    private function detectAgent(string $path): BeeStatus
     {
-        $process = new Process(['pgrep', '-f', "claude.*{$path}"]);
-        $process->run();
+        $result = $this->process->run(['pgrep', '-f', "claude.*{$path}"]);
 
-        if ($process->isSuccessful() && trim($process->getOutput()) !== '') {
-            return '🐝 agent running';
+        if ($result->successful && trim($result->output) !== '') {
+            return BeeStatus::Running;
         }
 
         // Check if there are uncommitted changes (agent might have worked and finished)
         $status = $this->getGitStatus($path);
 
         if ($status === null) {
-            return '❓ unknown';
+            return BeeStatus::Unknown;
         }
 
         if (str_contains($status, 'nothing to commit')) {
-            $commits = $this->getCommitCount($path);
-            if ($commits > 0) {
-                return '✅ done (' . $commits . ' commit' . ($commits > 1 ? 's' : '') . ')';
-            }
-
-            return '💤 idle';
+            return $this->getCommitCount($path) > 0 ? BeeStatus::Done : BeeStatus::Idle;
         }
 
-        return '🔧 changes pending';
+        return BeeStatus::ChangesPending;
+    }
+
+    /**
+     * Terminal display label for a status (commit count folded in for "done").
+     */
+    private function agentLabel(BeeStatus $status, int $commits): string
+    {
+        if ($status === BeeStatus::Done) {
+            return '✅ done (' . $commits . ' commit' . ($commits > 1 ? 's' : '') . ')';
+        }
+
+        return $status->label();
     }
 
     /**
@@ -68,17 +85,17 @@ final class WorktreeInspector
      */
     private function getChangeSummary(string $path): string
     {
-        $process = new Process(['git', 'diff', '--stat', '--cached', 'HEAD'], $path);
-        $process->run();
-        $staged = substr_count($process->getOutput(), "\n");
+        $staged = $this->countLines(
+            $this->process->run(['git', 'diff', '--name-only', '--cached'], $path)->output
+        );
 
-        $process = new Process(['git', 'diff', '--stat'], $path);
-        $process->run();
-        $unstaged = substr_count($process->getOutput(), "\n");
+        $unstaged = $this->countLines(
+            $this->process->run(['git', 'diff', '--name-only'], $path)->output
+        );
 
-        $process = new Process(['git', 'ls-files', '--others', '--exclude-standard'], $path);
-        $process->run();
-        $untracked = substr_count(trim($process->getOutput()), "\n") + (trim($process->getOutput()) !== '' ? 1 : 0);
+        $untracked = $this->countLines(
+            $this->process->run(['git', 'ls-files', '--others', '--exclude-standard'], $path)->output
+        );
 
         $parts = [];
         if ($staged > 0) {
@@ -95,14 +112,21 @@ final class WorktreeInspector
     }
 
     /**
+     * Count the number of non-empty lines in command output (one file per line).
+     */
+    private function countLines(string $output): int
+    {
+        $output = trim($output);
+
+        return $output === '' ? 0 : substr_count($output, "\n") + 1;
+    }
+
+    /**
      * Get the last commit message and relative time.
      */
     private function getLastCommit(string $path): string
     {
-        $process = new Process(['git', 'log', '-1', '--format=%s (%cr)', '--no-merges'], $path);
-        $process->run();
-
-        $output = trim($process->getOutput());
+        $output = trim($this->process->run(['git', 'log', '-1', '--format=%s (%cr)', '--no-merges'], $path)->output);
 
         if (empty($output)) {
             return '—';
@@ -123,11 +147,10 @@ final class WorktreeInspector
     {
         // Try to count commits ahead of main
         foreach (['main', 'master', 'develop'] as $base) {
-            $process = new Process(['git', 'rev-list', '--count', "{$base}..HEAD"], $path);
-            $process->run();
+            $result = $this->process->run(['git', 'rev-list', '--count', "{$base}..HEAD"], $path);
 
-            if ($process->isSuccessful()) {
-                return (int) trim($process->getOutput());
+            if ($result->successful) {
+                return (int) trim($result->output);
             }
         }
 
@@ -139,9 +162,8 @@ final class WorktreeInspector
      */
     private function getGitStatus(string $path): ?string
     {
-        $process = new Process(['git', 'status'], $path);
-        $process->run();
+        $result = $this->process->run(['git', 'status'], $path);
 
-        return $process->isSuccessful() ? $process->getOutput() : null;
+        return $result->successful ? $result->output : null;
     }
 }
