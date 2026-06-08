@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\LaunchesAgents;
 use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
@@ -19,11 +20,16 @@ use function Laravel\Prompts\warning;
 
 class PlanCommand extends Command
 {
+    use LaunchesAgents;
+
     protected $signature = 'plan
                             {--github= : GitHub repo (owner/repo)}
                             {--milestone= : GitHub milestone filter}
                             {--text= : Raw text input (backlog, audit...)}
-                            {--dry-run : Show the plan without spawning}';
+                            {--dry-run : Show the plan without spawning}
+                            {--run : Launch an autonomous agent in each spawned worktree}
+                            {--permission-mode= : Agent permission mode for --run}
+                            {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Analyze a backlog and orchestrate parallel agents';
 
@@ -43,11 +49,12 @@ class PlanCommand extends Command
         }
 
         $this->line('');
+        $state = new HiveState($context->path);
         $runner = new PlanRunner(
             app(DagProvider::class),
             new WorktreeManager($context->path),
             new ContextBuilder,
-            new HiveState($context->path),
+            $state,
         );
 
         try {
@@ -88,11 +95,13 @@ class PlanCommand extends Command
         $this->line('');
         $this->line(count($readyTasks) . ' task(s) ready to spawn in parallel.');
 
-        if (! confirm('Spawn these agents now?')) {
+        if (! $this->option('yes') && ! confirm('Spawn these agents now?')) {
             return self::SUCCESS;
         }
 
         $stack = $config->get('stack', []);
+        $mode = $this->permissionMode($config);
+        $autoRun = $this->option('run') && $this->confirmBypass($mode);
 
         foreach ($readyTasks as $task) {
             $result = spin(
@@ -102,13 +111,20 @@ class PlanCommand extends Command
 
             if ($result['error']) {
                 $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
-            } else {
-                $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+                continue;
+            }
+
+            $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+            if ($autoRun) {
+                $bee = $this->launchBee($context, $state, $result['branch'], $result['path'], $mode);
+                $this->line("     🐝 agent running (pid {$bee['pid']}, session {$bee['session_id']})");
             }
         }
 
         $this->line('');
-        $this->info('All agents spawned. Open in Superset or your terminal.');
+        $this->info($autoRun ? 'All agents spawned and running.' : 'All agents spawned. Open in Superset or your terminal.');
         $this->line('Run <comment>hive status</comment> to see active worktrees.');
 
         return self::SUCCESS;

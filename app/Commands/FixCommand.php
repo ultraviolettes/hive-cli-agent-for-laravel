@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\LaunchesAgents;
 use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
@@ -18,10 +19,15 @@ use function Laravel\Prompts\table;
 
 class FixCommand extends Command
 {
+    use LaunchesAgents;
+
     protected $signature = 'fix
                             {--nightwatch : Fetch unresolved exceptions from Nightwatch}
                             {--limit=10 : Max exceptions to process}
-                            {--dry-run : Show the plan without spawning}';
+                            {--dry-run : Show the plan without spawning}
+                            {--run : Launch an autonomous agent in each spawned worktree}
+                            {--permission-mode= : Agent permission mode for --run}
+                            {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Spawn agents to fix Nightwatch exceptions';
 
@@ -67,11 +73,12 @@ class FixCommand extends Command
         $this->line(count($exceptions) . ' unresolved exception(s) found.');
 
         $rawText = $ingester->formatForAnalysis($exceptions);
+        $state = new HiveState($context->path);
         $runner = new PlanRunner(
             app(DagProvider::class),
             new WorktreeManager($context->path),
             new ContextBuilder,
-            new HiveState($context->path),
+            $state,
         );
 
         try {
@@ -110,11 +117,13 @@ class FixCommand extends Command
         $this->line('');
         $this->line(count($readyTasks) . ' fix(es) ready to spawn.');
 
-        if (! confirm('Spawn fix agents now?')) {
+        if (! $this->option('yes') && ! confirm('Spawn fix agents now?')) {
             return self::SUCCESS;
         }
 
         $stack = $config->get('stack', []);
+        $mode = $this->permissionMode($config);
+        $autoRun = $this->option('run') && $this->confirmBypass($mode);
 
         foreach ($readyTasks as $task) {
             $result = spin(
@@ -124,13 +133,20 @@ class FixCommand extends Command
 
             if ($result['error']) {
                 $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
-            } else {
-                $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+                continue;
+            }
+
+            $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+            if ($autoRun) {
+                $bee = $this->launchBee($context, $state, $result['branch'], $result['path'], $mode);
+                $this->line("     🐝 agent running (pid {$bee['pid']}, session {$bee['session_id']})");
             }
         }
 
         $this->line('');
-        $this->info('Fix agents spawned. Open in Superset or your terminal.');
+        $this->info($autoRun ? 'Fix agents spawned and running.' : 'Fix agents spawned. Open in Superset or your terminal.');
 
         return self::SUCCESS;
     }

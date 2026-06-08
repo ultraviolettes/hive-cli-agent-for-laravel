@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\LaunchesAgents;
 use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
@@ -15,7 +16,13 @@ use function Laravel\Prompts\spin;
 
 class AdvanceCommand extends Command
 {
-    protected $signature = 'advance {--dry-run : Show what would be spawned without spawning}';
+    use LaunchesAgents;
+
+    protected $signature = 'advance
+                            {--dry-run : Show what would be spawned without spawning}
+                            {--run : Launch an autonomous agent in each spawned worktree}
+                            {--permission-mode= : Agent permission mode for --run}
+                            {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Advance the DAG: spawn tasks whose dependencies are now merged';
 
@@ -59,6 +66,8 @@ class AdvanceCommand extends Command
             $state,
         );
         $stack = $config->get('stack', []);
+        $mode = $this->permissionMode($config);
+        $autoRun = $this->option('run') && $this->confirmBypass($mode);
 
         $this->line('');
         foreach ($unblockable as $task) {
@@ -69,14 +78,21 @@ class AdvanceCommand extends Command
 
             if ($result['error']) {
                 $this->line("  ❌ <comment>{$result['branch']}</comment>: {$result['error']}");
-            } else {
-                $state->markReady($task['branch_name']);
-                $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+                continue;
+            }
+
+            $state->markReady($result['branch']);
+            $this->line("  ✅ <comment>{$result['branch']}</comment>");
+
+            if ($autoRun) {
+                $bee = $this->launchBee($context, $state, $result['branch'], $result['path'], $mode);
+                $this->line("     🐝 agent running (pid {$bee['pid']}, session {$bee['session_id']})");
             }
         }
 
         $this->line('');
-        $this->info('DAG advanced. Run <comment>hive status</comment> to see the new wave.');
+        $this->info($autoRun ? 'DAG advanced — new wave running.' : 'DAG advanced. Run <comment>hive status</comment> to see the new wave.');
 
         return self::SUCCESS;
     }

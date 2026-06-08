@@ -1,6 +1,8 @@
 <?php
 
+use App\Process\BackgroundRunner;
 use App\Support\HiveState;
+use Tests\Support\FakeBackgroundRunner;
 
 function advanceFixture(): string
 {
@@ -32,6 +34,26 @@ test('advance spawns a blocked task once its dependency is merged', function () 
     $task = (new HiveState($tmp))->get('feat/b');
     expect($task['runtime'])->toBe('spawned')
         ->and($task['status'])->toBe('ready')
+        ->and(is_dir($tmp . '/.hive/worktrees/feat-b'))->toBeTrue();
+
+    exec("rm -rf {$tmp}");
+});
+
+test('advance --run spawns and launches the unblocked agent', function () {
+    $tmp = advanceFixture();
+    (new HiveState($tmp))->markMerged('fix/a');
+
+    $bg = new FakeBackgroundRunner;
+    app()->instance(BackgroundRunner::class, $bg);
+
+    chdir($tmp);
+
+    $this->artisan('advance', ['--run' => true, '--yes' => true])->assertExitCode(0);
+
+    $task = (new HiveState($tmp))->get('feat/b');
+    expect($task['runtime'])->toBe('running')
+        ->and($task['session_id'])->not->toBeNull()
+        ->and($bg->started)->toHaveCount(1)
         ->and(is_dir($tmp . '/.hive/worktrees/feat-b'))->toBeTrue();
 
     exec("rm -rf {$tmp}");
