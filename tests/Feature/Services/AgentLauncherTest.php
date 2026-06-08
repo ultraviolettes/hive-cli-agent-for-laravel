@@ -2,6 +2,7 @@
 
 use App\Process\ProcessResult;
 use App\Services\AgentLauncher;
+use Tests\Support\FakeBackgroundRunner;
 use Tests\Support\FakeProcessRunner;
 
 test('run invokes claude headless in the worktree and parses the outcome', function () {
@@ -33,4 +34,22 @@ test('run surfaces a failure when the agent process fails', function () {
     expect($outcome['successful'])->toBeFalse()
         ->and($outcome['error'])->toContain('claude blew up')
         ->and($outcome['session_id'])->toBeNull();
+});
+
+test('launchBackground starts a detached agent in the worktree and returns its pid', function () {
+    $background = new FakeBackgroundRunner;
+    $launcher = new AgentLauncher('claude', new FakeProcessRunner, $background);
+
+    $pid = $launcher->launchBackground('/wt/x', 'do it', 'bypassPermissions', '/wt/x/.hive/logs/x.log');
+
+    expect($pid)->toBe(4242);
+
+    $started = $background->started[0];
+    expect($started['cwd'])->toBe('/wt/x')
+        ->and($started['logFile'])->toBe('/wt/x/.hive/logs/x.log')
+        ->and($started['command'])->toContain('claude')
+        ->and($started['command'])->toContain('-p')
+        ->and($started['command'])->toContain('do it')
+        ->and($started['command'])->toContain('--permission-mode')
+        ->and($started['command'])->toContain('bypassPermissions');
 });

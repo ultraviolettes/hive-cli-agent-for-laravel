@@ -38,7 +38,7 @@ class StatusCommand extends Command
         // Spawned tasks show as Active Bees; merged ones are done.
         $pending = array_values(array_filter(
             $state->all(),
-            fn ($task) => ! in_array($task['runtime'] ?? 'planned', ['spawned', 'merged'], true),
+            fn ($task) => ! in_array($task['runtime'] ?? 'planned', ['spawned', 'running', 'merged'], true),
         ));
 
         if (empty($worktrees) && empty($pending)) {

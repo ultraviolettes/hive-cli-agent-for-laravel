@@ -1,9 +1,11 @@
 <?php
 
+use App\Process\BackgroundRunner;
 use App\Process\ProcessResult;
 use App\Process\ProcessRunner;
 use App\Services\WorktreeManager;
 use App\Support\HiveState;
+use Tests\Support\FakeBackgroundRunner;
 use Tests\Support\FakeProcessRunner;
 
 test('run launches an agent in the worktree and records the session id', function () {
@@ -62,6 +64,74 @@ test('run aborts without launching when bypassPermissions is not confirmed', fun
     $this->artisan('run', ['branch' => 'feat/x'])->assertExitCode(0);
 
     expect(collect($fake->calls)->contains(fn ($c) => in_array('-p', $c['command'], true)))->toBeFalse();
+
+    exec("rm -rf {$tmp}");
+});
+
+test('run --background detaches the agent and records pid + log', function () {
+    $tmp = sys_get_temp_dir() . '/hive-bg-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} config user.email t@t.t");
+    exec("git -C {$tmp} config user.name t");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+    (new WorktreeManager($tmp))->spawn('feat/x');
+
+    $bg = new FakeBackgroundRunner;
+    app()->instance(BackgroundRunner::class, $bg);
+
+    chdir($tmp);
+
+    $this->artisan('run', ['branch' => 'feat/x', '--background' => true, '--yes' => true])->assertExitCode(0);
+
+    $task = (new HiveState($tmp))->get('feat/x');
+    expect($task['runtime'])->toBe('running')
+        ->and($task['pid'])->toBe(4242)
+        ->and($task['log_path'])->toContain('feat-x.log')
+        ->and($bg->started)->toHaveCount(1);
+
+    exec("rm -rf {$tmp}");
+});
+
+test('run --all launches a background agent in every active worktree', function () {
+    $tmp = sys_get_temp_dir() . '/hive-all-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} config user.email t@t.t");
+    exec("git -C {$tmp} config user.name t");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+    $manager = new WorktreeManager($tmp);
+    $manager->spawn('feat/a');
+    $manager->spawn('feat/b');
+
+    $bg = new FakeBackgroundRunner;
+    app()->instance(BackgroundRunner::class, $bg);
+
+    chdir($tmp);
+
+    $this->artisan('run', ['--all' => true, '--yes' => true])->assertExitCode(0);
+
+    expect($bg->started)->toHaveCount(2);
+
+    $running = collect((new HiveState($tmp))->all())->filter(fn ($t) => $t['runtime'] === 'running');
+    expect($running)->toHaveCount(2);
+
+    exec("rm -rf {$tmp}");
+});
+
+test('run requires a branch or --all', function () {
+    $tmp = sys_get_temp_dir() . '/hive-run-noargs-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    chdir($tmp);
+
+    $this->artisan('run')
+        ->assertExitCode(1)
+        ->expectsOutputToContain('Specify a branch or use --all');
 
     exec("rm -rf {$tmp}");
 });

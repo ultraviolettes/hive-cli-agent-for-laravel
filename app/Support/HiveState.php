@@ -172,6 +172,18 @@ final class HiveState
     }
 
     /**
+     * Record a detached agent running in the background (its PID + log file).
+     */
+    public function markRunning(string $branch, int $pid, string $logPath): void
+    {
+        $this->update($branch, [
+            'runtime' => 'running',
+            'pid' => $pid,
+            'log_path' => $logPath,
+        ]);
+    }
+
+    /**
      * Flip a task's DAG status to ready (used when an unblocked task is spawned).
      */
     public function markReady(string $branch): void
@@ -274,6 +286,8 @@ final class HiveState
             'runtime' => 'planned',
             'worktree_path' => null,
             'session_id' => null,
+            'pid' => null,
+            'log_path' => null,
             'error' => null,
         ];
     }
