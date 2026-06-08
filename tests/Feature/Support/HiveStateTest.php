@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\BeeRoleInferer;
 use App\Support\HiveState;
 
 beforeEach(function () {
@@ -176,6 +177,81 @@ test('markRunning without a session id preserves an existing one', function () {
     $state->markRunning('feat/x', 100, '/log'); // no session id this time
 
     expect((new HiveState($this->tmp))->get('feat/x')['session_id'])->toBe('sess-keep');
+});
+
+test('putPlan assigns an inferred role and a stable per-role bee_id', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'qa/checkout', 'title' => 'Add Pest tests', 'description' => 'coverage', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'feat/login', 'title' => 'Login page', 'description' => 'misc', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+
+    expect($state->get('qa/checkout')['role'])->toBe('qa')
+        ->and($state->get('qa/checkout')['bee_id'])->toBe('qa-1')
+        ->and($state->get('feat/login')['role'])->toBe('fullstack')
+        ->and($state->get('feat/login')['bee_id'])->toBe('fullstack-1');
+});
+
+test('a re-plan keeps the role and bee_id assigned on the first plan', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'x', 'title' => 'Add Pest tests', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+    expect($state->get('x')['role'])->toBe('qa');
+
+    // Re-plan with a title that would infer a different role.
+    $state->putPlan([
+        ['branch_name' => 'x', 'title' => 'Deploy to Forge', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+
+    expect($state->get('x')['role'])->toBe('qa')
+        ->and($state->get('x')['bee_id'])->toBe('qa-1');
+});
+
+test('an invalid stored role is replaced, not preserved', function () {
+    mkdir($this->tmp . '/.hive', 0755, true);
+    file_put_contents($this->tmp . '/.hive/state.json', json_encode([
+        'version' => 1,
+        'tasks' => ['x' => ['branch_name' => 'x', 'role' => 'banana', 'title' => '', 'status' => 'ready']],
+    ]));
+
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'x', 'title' => 'Add phpunit coverage', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+
+    expect($state->get('x')['role'])->toBe('qa');
+});
+
+test('backfill completes roles and bee_ids for legacy state without crashing', function () {
+    mkdir($this->tmp . '/.hive', 0755, true);
+    file_put_contents($this->tmp . '/.hive/state.json', json_encode([
+        'version' => 1,
+        'tasks' => [
+            'fix/auth' => ['branch_name' => 'fix/auth', 'title' => 'fix auth token', 'description' => '', 'status' => 'ready'],
+        ],
+    ]));
+
+    (new HiveState($this->tmp))->backfill(new BeeRoleInferer);
+
+    $task = (new HiveState($this->tmp))->get('fix/auth');
+    expect($task['role'])->toBe('security')
+        ->and($task['bee_id'])->toBe('security-1');
+});
+
+test('a launched task exposes bee_id, role, session_id, pid and log_path', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'feat/x', 'title' => 'Login page', 'description' => '', 'priority' => 1, 'type' => 'feature', 'depends_on' => [], 'status' => 'ready'],
+    ], new BeeRoleInferer);
+    $state->markRunning('feat/x', 4242, '/log/feat-x.log', 'sess-uuid');
+
+    $task = (new HiveState($this->tmp))->get('feat/x');
+    expect($task['role'])->toBe('fullstack')
+        ->and($task['bee_id'])->toBe('fullstack-1')
+        ->and($task['pid'])->toBe(4242)
+        ->and($task['log_path'])->toBe('/log/feat-x.log')
+        ->and($task['session_id'])->toBe('sess-uuid');
 });
 
 test('markFailed records the error against the task', function () {
