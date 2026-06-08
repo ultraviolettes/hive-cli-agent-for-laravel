@@ -121,6 +121,21 @@ test('run --all launches a background agent in every active worktree', function 
     exec("rm -rf {$tmp}");
 });
 
+test('run requires a branch or --all', function () {
+    $tmp = sys_get_temp_dir() . '/hive-run-noargs-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    chdir($tmp);
+
+    $this->artisan('run')
+        ->assertExitCode(1)
+        ->expectsOutputToContain('Specify a branch or use --all');
+
+    exec("rm -rf {$tmp}");
+});
+
 test('run fails clearly when the worktree does not exist', function () {
     $tmp = sys_get_temp_dir() . '/hive-run-missing-' . uniqid();
     mkdir($tmp);
