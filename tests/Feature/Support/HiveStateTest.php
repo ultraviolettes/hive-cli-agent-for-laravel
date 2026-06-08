@@ -22,7 +22,68 @@ test('persists a planned DAG and reloads it from disk', function () {
         ->and($reloaded->get('fix/a')['status'])->toBe('ready')
         ->and($reloaded->get('fix/a')['runtime'])->toBe('planned')
         ->and($reloaded->get('feat/b')['status'])->toBe('blocked')
-        ->and($reloaded->get('feat/b')['depends_on'])->toBe([0]);
+        ->and($reloaded->get('feat/b')['depends_on'])->toBe(['fix/a']);
+});
+
+test('stores dependencies as resolved branch names, not plan indices', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'fix/a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'feat/b', 'title' => 'B', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [0], 'status' => 'blocked'],
+    ]);
+
+    expect($state->get('feat/b')['depends_on'])->toBe(['fix/a']);
+});
+
+test('unblockable returns blocked tasks once every dependency is merged', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'fix/a', 'title' => 'A', 'description' => 'd', 'priority' => 100, 'type' => 'security', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'feat/b', 'title' => 'B', 'description' => 'd', 'priority' => 30, 'type' => 'feature', 'depends_on' => [0], 'status' => 'blocked'],
+    ]);
+
+    expect($state->unblockable())->toBeEmpty();
+
+    $state->markMerged('fix/a');
+
+    $unblockable = $state->unblockable();
+    expect($unblockable)->toHaveCount(1)
+        ->and($unblockable[0]['branch_name'])->toBe('feat/b');
+});
+
+test('a task stays blocked until all of its dependencies are merged', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'b', 'title' => 'B', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'c', 'title' => 'C', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [0, 1], 'status' => 'blocked'],
+    ]);
+
+    $state->markMerged('a');
+    expect($state->unblockable())->toBeEmpty();
+
+    $state->markMerged('b');
+    expect($state->unblockable())->toHaveCount(1)
+        ->and($state->unblockable()[0]['branch_name'])->toBe('c');
+});
+
+test('markMerged is a no-op for an unknown (manual) branch', function () {
+    $state = new HiveState($this->tmp);
+    $state->markMerged('feat/never-planned');
+
+    expect($state->get('feat/never-planned'))->toBeNull();
+});
+
+test('an already-spawned blocked task is not re-offered by unblockable', function () {
+    $state = new HiveState($this->tmp);
+    $state->putPlan([
+        ['branch_name' => 'fix/a', 'title' => 'A', 'description' => 'd', 'priority' => 1, 'type' => 'bug', 'depends_on' => [], 'status' => 'ready'],
+        ['branch_name' => 'feat/b', 'title' => 'B', 'description' => 'd', 'priority' => 1, 'type' => 'feature', 'depends_on' => [0], 'status' => 'blocked'],
+    ]);
+    $state->markMerged('fix/a');
+    $state->markSpawned('feat/b', '/wt/b');
+
+    expect($state->unblockable())->toBeEmpty();
 });
 
 test('records a spawned worktree without losing plan fields', function () {
