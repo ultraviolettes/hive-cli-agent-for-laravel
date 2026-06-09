@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use Dotenv\Dotenv;
+use Illuminate\Support\Str;
 
 /**
  * Explicit, immutable description of the project Hive is operating on.
@@ -40,6 +41,14 @@ final class HiveContext
     public function env(string $key, ?string $default = null): ?string
     {
         return $this->env[$key] ?? $default;
+    }
+
+    /**
+     * Canonical log file for a bee, e.g. .hive/logs/fix-auth.log.
+     */
+    public function logPath(string $branch): string
+    {
+        return $this->path . '/.hive/logs/' . Str::slug(str_replace('/', '-', $branch)) . '.log';
     }
 
     public function anthropicApiKey(): ?string
