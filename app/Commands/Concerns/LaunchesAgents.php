@@ -47,7 +47,7 @@ trait LaunchesAgents
         // ad-hoc (not via a plan).
         $state->ensureRole($branch, app(BeeRoleInferer::class));
 
-        $log = $context->path . '/.hive/logs/' . Str::slug(str_replace('/', '-', $branch)) . '.log';
+        $log = $context->logPath($branch);
         $sessionId = (string) Str::uuid();
         $pid = app(AgentLauncher::class)->launchBackground($path, $this->beePrompt($state->get($branch)), $mode, $log, $sessionId);
         $state->markRunning($branch, $pid, $log, $sessionId);

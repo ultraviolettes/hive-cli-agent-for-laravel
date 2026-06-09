@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Process\BackgroundRunner;
 use App\Services\BeeRoleInferer;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
@@ -51,25 +52,31 @@ class StatusCommand extends Command
         }
 
         if (! empty($worktrees)) {
-            $this->line('');
-            $this->line("🍯 <comment>{$config->get('project')}</comment> — Active Bees ({$this->countByStatus($worktrees, $inspector)})");
-            $this->line('');
-
             $rows = [];
+            $counts = ['running' => 0, 'done' => 0, 'pending' => 0, 'idle' => 0];
+
             foreach ($worktrees as $worktree) {
                 $info = $inspector->inspect($worktree);
                 $task = $state->get($info['branch']);
+                $live = $this->liveStatus($info, $task);
+                $counts[$live['key']]++;
+
                 $rows[] = [
                     $info['branch'],
                     $task['role'] ?? '—',
                     $task['bee_id'] ?? '—',
-                    $info['agent'],
+                    $live['label'],
+                    $task['pid'] ?? '—',
+                    $this->shortSession($task),
                     $info['changes'],
-                    $info['last_commit'],
                 ];
             }
 
-            $this->table(['Branch', 'Role', 'Bee', 'Status', 'Changes', 'Last Commit'], $rows);
+            $this->line('');
+            $this->line("🍯 <comment>{$config->get('project')}</comment> — Active Bees ({$this->summarize($counts)})");
+            $this->line('');
+
+            $this->table(['Branch', 'Role', 'Bee', 'Status', 'PID', 'Session', 'Changes'], $rows);
         }
 
         if (! empty($pending)) {
@@ -108,34 +115,52 @@ class StatusCommand extends Command
         return ($task['status'] ?? 'ready') === 'blocked' ? '🔒 blocked' : '🟡 ready';
     }
 
-    private function countByStatus(array $worktrees, WorktreeInspector $inspector): string
+    /**
+     * Live status of a worktree. A background bee's liveness comes from its
+     * stored PID (reliable); otherwise fall back to the git-derived status.
+     *
+     * @param  array<string, mixed>  $info
+     * @param  array<string, mixed>|null  $task
+     * @return array{label: string, key: string}
+     */
+    private function liveStatus(array $info, ?array $task): array
     {
-        $counts = ['running' => 0, 'done' => 0, 'pending' => 0, 'idle' => 0];
-
-        foreach ($worktrees as $worktree) {
-            $key = match ($inspector->inspect($worktree)['status']) {
-                BeeStatus::Running => 'running',
-                BeeStatus::Done => 'done',
-                BeeStatus::ChangesPending => 'pending',
-                default => 'idle',
-            };
-            $counts[$key]++;
+        if ($task !== null && ($task['runtime'] ?? null) === 'running' && ! empty($task['pid'])) {
+            return app(BackgroundRunner::class)->isRunning((int) $task['pid'])
+                ? ['label' => '🐝 running', 'key' => 'running']
+                : ['label' => '✅ finished', 'key' => 'done'];
         }
 
+        return match ($info['status']) {
+            BeeStatus::Running => ['label' => $info['agent'], 'key' => 'running'],
+            BeeStatus::Done => ['label' => $info['agent'], 'key' => 'done'],
+            BeeStatus::ChangesPending => ['label' => $info['agent'], 'key' => 'pending'],
+            default => ['label' => $info['agent'], 'key' => 'idle'],
+        };
+    }
+
+    /**
+     * @param  array<string, int>  $counts
+     */
+    private function summarize(array $counts): string
+    {
         $parts = [];
-        if ($counts['running'] > 0) {
-            $parts[] = "{$counts['running']} running";
-        }
-        if ($counts['done'] > 0) {
-            $parts[] = "{$counts['done']} done";
-        }
-        if ($counts['pending'] > 0) {
-            $parts[] = "{$counts['pending']} pending";
-        }
-        if ($counts['idle'] > 0) {
-            $parts[] = "{$counts['idle']} idle";
+        foreach (['running', 'done', 'pending', 'idle'] as $key) {
+            if ($counts[$key] > 0) {
+                $parts[] = "{$counts[$key]} {$key}";
+            }
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $task
+     */
+    private function shortSession(?array $task): string
+    {
+        $sessionId = $task['session_id'] ?? null;
+
+        return is_string($sessionId) && $sessionId !== '' ? substr($sessionId, 0, 8) : '—';
     }
 }
