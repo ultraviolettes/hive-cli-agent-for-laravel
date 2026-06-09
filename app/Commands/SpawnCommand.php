@@ -46,6 +46,7 @@ class SpawnCommand extends Command
             $builder->writeContext($path, $branch, $context, [
                 'stack' => $config->get('stack', []),
             ]);
+            $manager->keepContextLocal($branch);
             $this->line('✅ CLAUDE.md injected with task context');
         }
 
