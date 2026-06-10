@@ -17,6 +17,10 @@ arch('commands run external processes only through the ProcessRunner seam')
     ->expect('App\Commands')
     ->not->toUse(\Symfony\Component\Process\Process::class);
 
+arch('task sources implement the TaskSource contract')
+    ->expect(['App\Services\GithubIngester', 'App\Services\NightwatchIngester'])
+    ->toImplement(\App\Contracts\TaskSource::class);
+
 arch('DagAnalyzerAgent implements laravel/ai contracts')
     ->expect('App\Ai\Agents\DagAnalyzerAgent')
     ->toImplement(\Laravel\Ai\Contracts\Agent::class)

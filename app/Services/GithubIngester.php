@@ -2,27 +2,31 @@
 
 namespace App\Services;
 
+use App\Contracts\TaskSource;
 use App\Process\ProcessRunner;
 use App\Process\SymfonyProcessRunner;
 
-final class GithubIngester
+final class GithubIngester implements TaskSource
 {
     public function __construct(
+        private readonly string $repo,
+        private readonly ?string $milestone = null,
+        private readonly int $limit = 50,
         private readonly string $ghBinary = 'gh',
         private readonly ProcessRunner $process = new SymfonyProcessRunner,
     ) {}
 
-    public function fetch(string $repo, ?string $milestone = null, int $limit = 50): array
+    public function fetch(): array
     {
         if (! $this->ghAvailable()) {
             throw new \RuntimeException('gh CLI not found. Install it: https://cli.github.com');
         }
 
-        $args = [$this->ghBinary, 'issue', 'list', '--repo', $repo, '--limit', (string) $limit, '--json', 'number,title,body,labels'];
+        $args = [$this->ghBinary, 'issue', 'list', '--repo', $this->repo, '--limit', (string) $this->limit, '--json', 'number,title,body,labels'];
 
-        if ($milestone) {
+        if ($this->milestone) {
             $args[] = '--search';
-            $args[] = "milestone:\"{$milestone}\"";
+            $args[] = "milestone:\"{$this->milestone}\"";
         }
 
         $result = $this->process->run($args);

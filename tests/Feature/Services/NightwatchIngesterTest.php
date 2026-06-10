@@ -21,6 +21,14 @@ test('fetches exceptions from Nightwatch API', function () {
         ->and($exceptions[0]['occurrences'])->toBe(150);
 });
 
+test('fetch sends the constructor limit to the API', function () {
+    Http::fake(['nightwatch.laravel.com/*' => Http::response(['data' => []])]);
+
+    (new NightwatchIngester('tok', 'proj', 5))->fetch();
+
+    Http::assertSent(fn ($request) => str_contains($request->url(), 'limit=5'));
+});
+
 test('sorts exceptions by occurrences descending', function () {
     $ingester = new NightwatchIngester('token', 'project');
     $exceptions = [

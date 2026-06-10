@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Commands\Concerns\LaunchesAgents;
 use App\Commands\Concerns\ResolvesAiTimeout;
 use App\Contracts\DagProvider;
+use App\Contracts\TaskSource;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
 use App\Services\GithubIngester;
@@ -146,11 +147,15 @@ class PlanCommand extends Command
         }
 
         if ($repo = $this->option('github')) {
-            $ingester = app(GithubIngester::class);
+            /** @var TaskSource $source */
+            $source = app()->makeWith(GithubIngester::class, [
+                'repo' => $repo,
+                'milestone' => $this->option('milestone'),
+            ]);
 
             try {
                 $issues = spin(
-                    fn () => $ingester->fetch($repo, $this->option('milestone')),
+                    fn () => $source->fetch(),
                     "Fetching issues from {$repo}..."
                 );
                 if (empty($issues)) {
@@ -160,7 +165,7 @@ class PlanCommand extends Command
                 }
                 $this->line(count($issues) . ' issue(s) fetched from ' . $repo);
 
-                return $ingester->formatForAnalysis($issues);
+                return $source->formatForAnalysis($issues);
             } catch (\RuntimeException $e) {
                 $this->error($e->getMessage());
 
