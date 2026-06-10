@@ -3,6 +3,7 @@
 namespace App\Commands;
 
 use App\Commands\Concerns\LaunchesAgents;
+use App\Commands\Concerns\ResolvesAiTimeout;
 use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
@@ -21,6 +22,7 @@ use function Laravel\Prompts\warning;
 class PlanCommand extends Command
 {
     use LaunchesAgents;
+    use ResolvesAiTimeout;
 
     protected $signature = 'plan
                             {--github= : GitHub repo (owner/repo)}
@@ -29,6 +31,7 @@ class PlanCommand extends Command
                             {--dry-run : Show the plan without spawning}
                             {--run : Launch an autonomous agent in each spawned worktree}
                             {--permission-mode= : Agent permission mode for --run}
+                            {--timeout= : AI analysis timeout in seconds (default: ai_timeout in .hive.json, else 300)}
                             {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Analyze a backlog and orchestrate parallel agents';
@@ -57,9 +60,11 @@ class PlanCommand extends Command
             $state,
         );
 
+        $timeout = $this->aiTimeout($config);
+
         try {
             $tasks = spin(
-                fn () => $runner->plan($rawText, $context->anthropicApiKey()),
+                fn () => $runner->plan($rawText, $context->anthropicApiKey(), $timeout),
                 '🐝 QueenBee is analyzing your backlog...'
             );
         } catch (\RuntimeException $e) {

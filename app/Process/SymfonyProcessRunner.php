@@ -2,6 +2,7 @@
 
 namespace App\Process;
 
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 final class SymfonyProcessRunner implements ProcessRunner
@@ -14,7 +15,19 @@ final class SymfonyProcessRunner implements ProcessRunner
             $process->setTimeout($timeout);
         }
 
-        $process->run();
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException) {
+            // Surface the timeout as data so callers can react (fallback,
+            // clear message) instead of catching a Symfony-specific exception.
+            return new ProcessResult(
+                false,
+                $process->getOutput(),
+                $process->getErrorOutput(),
+                $process->getExitCode() ?? 1,
+                timedOut: true,
+            );
+        }
 
         return new ProcessResult(
             $process->isSuccessful(),

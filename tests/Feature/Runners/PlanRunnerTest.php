@@ -27,7 +27,7 @@ function planRunner(WorktreeManager $manager, ?DagProvider $analyzer = null): Pl
 
 test('plan delegates to the analyzer and returns the task list', function () {
     $analyzer = Mockery::mock(DagProvider::class);
-    $analyzer->shouldReceive('analyze')->once()->with('backlog', 'sk-key')->andReturn([
+    $analyzer->shouldReceive('analyze')->once()->with('backlog', 'sk-key', null)->andReturn([
         'tasks' => [['branch_name' => 'fix/a', 'status' => 'ready']],
     ]);
 
@@ -35,6 +35,13 @@ test('plan delegates to the analyzer and returns the task list', function () {
 
     expect($tasks)->toHaveCount(1)
         ->and($tasks[0]['branch_name'])->toBe('fix/a');
+});
+
+test('plan forwards the timeout to the analyzer', function () {
+    $analyzer = Mockery::mock(DagProvider::class);
+    $analyzer->shouldReceive('analyze')->once()->with('backlog', null, 120)->andReturn(['tasks' => []]);
+
+    planRunner($this->manager, $analyzer)->plan('backlog', null, 120);
 });
 
 test('readyTasks keeps only tasks with ready status', function () {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Exceptions\ClaudeCodeTimeoutException;
 use App\Process\ProcessResult;
 use App\Services\ClaudeCodeGateway;
 use Tests\Support\FakeProcessRunner;
@@ -71,4 +72,39 @@ test('promptJson throws when the response decodes to a scalar', function () {
     $gateway = fakeGateway('42');
 
     expect(fn () => $gateway->promptJson('x'))->toThrow(\RuntimeException::class);
+});
+
+test('prompt throws a dedicated timeout exception when the runner times out', function () {
+    $runner = (new FakeProcessRunner)->queue(new ProcessResult(false, '', '', 1, timedOut: true));
+
+    expect(fn () => (new ClaudeCodeGateway('claude', $runner))->prompt('hi'))
+        ->toThrow(ClaudeCodeTimeoutException::class);
+});
+
+test('the timeout exception carries the effective timeout', function () {
+    $runner = (new FakeProcessRunner)->queue(new ProcessResult(false, '', '', 1, timedOut: true));
+
+    try {
+        (new ClaudeCodeGateway('claude', $runner))->promptJson('x', 45);
+        $this->fail('Expected ClaudeCodeTimeoutException');
+    } catch (ClaudeCodeTimeoutException $e) {
+        expect($e->timeoutSeconds)->toBe(45)
+            ->and($e->getMessage())->toContain('45');
+    }
+});
+
+test('prompt forwards the custom timeout to the runner', function () {
+    $runner = (new FakeProcessRunner)->queue(new ProcessResult(true, json_encode(['result' => 'ok']), '', 0));
+
+    (new ClaudeCodeGateway('claude', $runner))->prompt('hi', 45);
+
+    expect($runner->calls[0]['timeout'])->toBe(45);
+});
+
+test('prompt defaults to 300 seconds when no timeout is given', function () {
+    $runner = (new FakeProcessRunner)->queue(new ProcessResult(true, json_encode(['result' => 'ok']), '', 0));
+
+    (new ClaudeCodeGateway('claude', $runner))->prompt('hi');
+
+    expect($runner->calls[0]['timeout'])->toBe(300);
 });

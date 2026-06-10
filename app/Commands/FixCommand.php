@@ -3,6 +3,7 @@
 namespace App\Commands;
 
 use App\Commands\Concerns\LaunchesAgents;
+use App\Commands\Concerns\ResolvesAiTimeout;
 use App\Contracts\DagProvider;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
@@ -20,6 +21,7 @@ use function Laravel\Prompts\table;
 class FixCommand extends Command
 {
     use LaunchesAgents;
+    use ResolvesAiTimeout;
 
     protected $signature = 'fix
                             {--nightwatch : Fetch unresolved exceptions from Nightwatch}
@@ -27,6 +29,7 @@ class FixCommand extends Command
                             {--dry-run : Show the plan without spawning}
                             {--run : Launch an autonomous agent in each spawned worktree}
                             {--permission-mode= : Agent permission mode for --run}
+                            {--timeout= : AI analysis timeout in seconds (default: ai_timeout in .hive.json, else 300)}
                             {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Spawn agents to fix Nightwatch exceptions';
@@ -81,9 +84,11 @@ class FixCommand extends Command
             $state,
         );
 
+        $timeout = $this->aiTimeout($config);
+
         try {
             $tasks = spin(
-                fn () => $runner->plan($rawText, $context->anthropicApiKey()),
+                fn () => $runner->plan($rawText, $context->anthropicApiKey(), $timeout),
                 '🐝 QueenBee is building the fix plan...'
             );
         } catch (\RuntimeException $e) {
