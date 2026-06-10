@@ -4,10 +4,44 @@ namespace App\Services;
 
 final class ContextBuilder
 {
+    private const BLOCK_START = '<!-- HIVE:CONTEXT START -->';
+
+    private const BLOCK_END = '<!-- HIVE:CONTEXT END -->';
+
+    /**
+     * Inject the task context into the worktree's CLAUDE.md.
+     *
+     * The target project may ship its own CLAUDE.md (conventions, stack rules),
+     * so we never overwrite it: the Hive context is appended inside dedicated
+     * markers, and any previous Hive block is stripped first so re-spawning a
+     * task replaces the block instead of stacking duplicates.
+     */
     public function writeContext(string $worktreePath, string $branch, string $taskDescription, array $meta = []): void
     {
-        $content = $this->buildContent($branch, $taskDescription, $meta);
-        file_put_contents($worktreePath . '/CLAUDE.md', $content);
+        $file = $worktreePath . '/CLAUDE.md';
+
+        $existing = is_file($file)
+            ? rtrim($this->stripHiveBlock((string) file_get_contents($file)))
+            : '';
+
+        $block = self::BLOCK_START . "\n"
+            . $this->buildContent($branch, $taskDescription, $meta) . "\n"
+            . self::BLOCK_END;
+
+        $content = $existing === '' ? $block : $existing . "\n\n" . $block;
+
+        file_put_contents($file, $content . "\n");
+    }
+
+    /**
+     * Remove a previously injected Hive block (and its surrounding blank lines)
+     * so re-injection stays idempotent.
+     */
+    private function stripHiveBlock(string $content): string
+    {
+        $pattern = '/\n*' . preg_quote(self::BLOCK_START, '/') . '.*?' . preg_quote(self::BLOCK_END, '/') . '\n*/s';
+
+        return (string) preg_replace($pattern, '', $content);
     }
 
     private function buildContent(string $branch, string $description, array $meta): string

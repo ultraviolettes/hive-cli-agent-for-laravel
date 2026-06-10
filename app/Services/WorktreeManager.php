@@ -31,6 +31,19 @@ final class WorktreeManager
         return $path;
     }
 
+    /**
+     * Keep an injected context file (CLAUDE.md) local to the worktree: the file
+     * is tracked-but-skipped so the bee still reads it, but its Hive block never
+     * shows up in `git status` nor lands in the bee's commits / PR.
+     *
+     * Best-effort: `git update-index --skip-worktree` only applies to tracked
+     * files, so this is a no-op when the project ships no CLAUDE.md (untracked).
+     */
+    public function keepContextLocal(string $branch, string $file = 'CLAUDE.md'): void
+    {
+        $this->process->run(['git', 'update-index', '--skip-worktree', $file], $this->worktreePath($branch));
+    }
+
     public function harvest(string $branch): void
     {
         $path = $this->worktreePath($branch);

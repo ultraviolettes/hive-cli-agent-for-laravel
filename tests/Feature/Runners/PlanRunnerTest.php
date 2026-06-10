@@ -71,6 +71,25 @@ test('spawnTask honours the type override in the injected context', function () 
     expect(file_get_contents($result['path'] . '/CLAUDE.md'))->toContain('**Type:** bug');
 });
 
+test('spawnTask preserves a committed project CLAUDE.md and keeps the Hive context out of git status', function () {
+    // The target project ships its own CLAUDE.md (committed), like the portfolio repo.
+    file_put_contents($this->tmp . '/CLAUDE.md', "# Portfolio\n\nProject conventions: use Volt.\n");
+    exec("git -C {$this->tmp} add CLAUDE.md");
+    exec("git -C {$this->tmp} commit -m 'add project CLAUDE.md' -q");
+
+    $task = ['branch_name' => 'fix/keep', 'description' => 'Fix the grid animation', 'status' => 'ready', 'type' => 'bug'];
+    $result = planRunner($this->manager)->spawnTask($task, ['laravel', 'pest']);
+
+    $md = file_get_contents($result['path'] . '/CLAUDE.md');
+    expect($md)->toContain('Project conventions: use Volt.')   // project conventions preserved
+        ->and($md)->toContain('Fix the grid animation');       // Hive task injected
+
+    // The injected modification must not surface as a pending change (skip-worktree).
+    $status = [];
+    exec("git -C {$result['path']} status --porcelain", $status);
+    expect(implode("\n", $status))->not->toContain('CLAUDE.md');
+});
+
 test('spawnTask returns an error instead of throwing when the branch already exists', function () {
     $runner = planRunner($this->manager);
     $task = ['branch_name' => 'feat/dup', 'description' => 'x', 'status' => 'ready', 'type' => 'feature'];

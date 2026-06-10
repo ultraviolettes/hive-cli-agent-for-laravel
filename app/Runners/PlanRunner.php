@@ -70,6 +70,7 @@ final class PlanRunner
         try {
             $path = $this->manager->spawn($branch);
             $this->builder->writeContext($path, $branch, $task['description'] ?? '', $this->buildMeta($task, $stack, $typeOverride));
+            $this->manager->keepContextLocal($branch);
             $this->state?->markSpawned($branch, $path);
 
             return ['branch' => $branch, 'path' => $path, 'error' => null];

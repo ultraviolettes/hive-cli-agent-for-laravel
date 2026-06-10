@@ -67,3 +67,21 @@ test('spawn surfaces the runner failure without touching real git', function () 
 
     expect(fn () => $manager->spawn('feat/x'))->toThrow(\RuntimeException::class, 'boom');
 });
+
+test('keepContextLocal marks the context file skip-worktree inside the worktree', function () {
+    $runner = new FakeProcessRunner;
+    $manager = new WorktreeManager('/repo', $runner);
+
+    $manager->keepContextLocal('fix/a');
+
+    expect($runner->calls)->toHaveCount(1)
+        ->and($runner->calls[0]['command'])->toBe(['git', 'update-index', '--skip-worktree', 'CLAUDE.md'])
+        ->and($runner->calls[0]['cwd'])->toBe('/repo/.hive/worktrees/fix-a');
+});
+
+test('keepContextLocal is best-effort and swallows git failures (untracked file)', function () {
+    $runner = (new FakeProcessRunner)->queue(new ProcessResult(false, '', 'fatal: Unable to mark file', 128));
+    $manager = new WorktreeManager('/repo', $runner);
+
+    expect(fn () => $manager->keepContextLocal('fix/a'))->not->toThrow(\Throwable::class);
+});
