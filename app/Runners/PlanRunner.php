@@ -33,9 +33,9 @@ final class PlanRunner
      *
      * @return array<int, array<string, mixed>>
      */
-    public function plan(string $rawText, ?string $anthropicApiKey = null): array
+    public function plan(string $rawText, ?string $anthropicApiKey = null, ?int $timeout = null): array
     {
-        $tasks = $this->analyzer->analyze($rawText, $anthropicApiKey)['tasks'];
+        $tasks = $this->analyzer->analyze($rawText, $anthropicApiKey, $timeout)['tasks'];
 
         $this->state?->putPlan($tasks, $this->roleInferer);
 

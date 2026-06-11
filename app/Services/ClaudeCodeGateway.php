@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Contracts\ClaudeCode;
+use App\Exceptions\ClaudeCodeTimeoutException;
 use App\Process\ProcessRunner;
 use App\Process\SymfonyProcessRunner;
 
 final class ClaudeCodeGateway implements ClaudeCode
 {
+    public const DEFAULT_TIMEOUT_SECONDS = 300;
+
     public function __construct(
         private readonly string $binary = 'claude',
         private readonly ProcessRunner $process = new SymfonyProcessRunner,
@@ -16,9 +19,15 @@ final class ClaudeCodeGateway implements ClaudeCode
     /**
      * Send a prompt to Claude Code in headless mode and return the result.
      */
-    public function prompt(string $prompt): string
+    public function prompt(string $prompt, ?int $timeout = null): string
     {
-        $result = $this->process->run([$this->binary, '-p', $prompt, '--output-format', 'json'], null, 120);
+        $timeout ??= self::DEFAULT_TIMEOUT_SECONDS;
+
+        $result = $this->process->run([$this->binary, '-p', $prompt, '--output-format', 'json'], null, $timeout);
+
+        if ($result->timedOut) {
+            throw new ClaudeCodeTimeoutException($timeout);
+        }
 
         if (! $result->successful) {
             throw new \RuntimeException('Claude Code error: ' . $result->errorOutput);
@@ -36,9 +45,9 @@ final class ClaudeCodeGateway implements ClaudeCode
     /**
      * Send a prompt and parse the result as JSON.
      */
-    public function promptJson(string $prompt): array
+    public function promptJson(string $prompt, ?int $timeout = null): array
     {
-        $result = $this->prompt($prompt);
+        $result = $this->prompt($prompt, $timeout);
 
         // Strip markdown code fences if present
         $result = preg_replace('/^```(?:json)?\s*\n?/m', '', $result);

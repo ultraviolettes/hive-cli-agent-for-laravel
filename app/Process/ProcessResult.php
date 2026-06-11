@@ -14,5 +14,6 @@ final class ProcessResult
         public readonly string $output,
         public readonly string $errorOutput,
         public readonly int $exitCode,
+        public readonly bool $timedOut = false,
     ) {}
 }

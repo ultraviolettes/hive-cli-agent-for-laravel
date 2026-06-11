@@ -10,7 +10,8 @@ namespace App\Contracts;
 interface DagProvider
 {
     /**
+     * @param  ?int  $timeout  Seconds before the AI call is aborted (provider default when null).
      * @return array{tasks: array<int, array<string, mixed>>}
      */
-    public function analyze(string $rawText, ?string $anthropicApiKey = null): array;
+    public function analyze(string $rawText, ?string $anthropicApiKey = null, ?int $timeout = null): array;
 }

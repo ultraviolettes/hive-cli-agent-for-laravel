@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Ai\Agents\DagAnalyzerAgent;
 use App\Contracts\ClaudeCode;
 use App\Contracts\DagProvider;
+use App\Exceptions\ClaudeCodeTimeoutException;
 
 final class DagAnalyzer implements DagProvider
 {
@@ -18,10 +19,22 @@ final class DagAnalyzer implements DagProvider
      * Uses Claude Code CLI (headless) by default. Falls back to laravel/ai
      * when an Anthropic API key is supplied and Claude Code is not available.
      */
-    public function analyze(string $rawText, ?string $anthropicApiKey = null): array
+    public function analyze(string $rawText, ?string $anthropicApiKey = null, ?int $timeout = null): array
     {
         if ($this->claude->isAvailable()) {
-            return $this->viaClaudeCode($rawText);
+            try {
+                return $this->viaClaudeCode($rawText, $timeout);
+            } catch (ClaudeCodeTimeoutException $e) {
+                if (! empty($anthropicApiKey)) {
+                    return $this->viaLaravelAi($rawText, $anthropicApiKey);
+                }
+
+                throw new \RuntimeException(
+                    $e->getMessage() . "\n"
+                    . "Increase the timeout (--timeout flag or \"ai_timeout\" in .hive.json)\n"
+                    . "or set ANTHROPIC_API_KEY in your project's .env to enable the laravel/ai fallback."
+                );
+            }
         }
 
         if (! empty($anthropicApiKey)) {
@@ -35,11 +48,11 @@ final class DagAnalyzer implements DagProvider
         );
     }
 
-    private function viaClaudeCode(string $rawText): array
+    private function viaClaudeCode(string $rawText, ?int $timeout = null): array
     {
         $prompt = $this->buildPrompt($rawText);
 
-        return $this->claude->promptJson($prompt);
+        return $this->claude->promptJson($prompt, $timeout);
     }
 
     private function viaLaravelAi(string $rawText, string $anthropicApiKey): array
