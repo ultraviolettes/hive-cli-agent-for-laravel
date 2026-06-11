@@ -121,6 +121,11 @@ final class DagAnalyzer implements DagProvider
                 }
             }
 
+            // The spawn gate is `status === ready`, so never trust the AI's
+            // status: derive it from the dependencies. An adversarial plan
+            // cannot claim "ready" to jump ahead of its prerequisites.
+            $tasks[$i]['status'] = $deps === [] ? 'ready' : 'blocked';
+
             $tasks[$i]['title'] = is_string($task['title'] ?? null) ? $task['title'] : '';
             $tasks[$i]['description'] = is_string($task['description'] ?? null) ? $task['description'] : '';
             $tasks[$i]['priority'] = max(0, min(100, (int) ($task['priority'] ?? 0)));

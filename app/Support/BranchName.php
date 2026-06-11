@@ -27,12 +27,17 @@ final class BranchName
             );
         }
 
-        if (str_contains($branch, '..') || str_contains($branch, '//')) {
-            throw new \InvalidArgumentException("Invalid branch name '{$branch}': '..' and '//' are not allowed.");
+        if (str_contains($branch, '..')) {
+            throw new \InvalidArgumentException("Invalid branch name '{$branch}': '..' is not allowed.");
         }
 
-        if (str_ends_with($branch, '/') || str_ends_with($branch, '.') || str_ends_with($branch, '.lock')) {
-            throw new \InvalidArgumentException("Invalid branch name '{$branch}': must not end with '/', '.' or '.lock'.");
+        // git check-ref-format rules apply per slash-separated component.
+        foreach (explode('/', $branch) as $segment) {
+            if ($segment === '' || str_starts_with($segment, '.') || str_ends_with($segment, '.') || str_ends_with($segment, '.lock')) {
+                throw new \InvalidArgumentException(
+                    "Invalid branch name '{$branch}': each segment must be non-empty, must not start or end with '.', and must not end with '.lock'."
+                );
+            }
         }
 
         return $branch;

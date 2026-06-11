@@ -102,6 +102,26 @@ test('rejects an AI plan with non-integer dependencies', function () {
         ->toThrow(\RuntimeException::class, 'depends_on');
 });
 
+test('an AI task cannot claim ready while declaring dependencies (DAG gate bypass)', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'Dep', 'branch_name' => 'fix/dep', 'status' => 'ready', 'depends_on' => []],
+        ['title' => 'Sneaky', 'branch_name' => 'feat/sneaky', 'status' => 'ready', 'depends_on' => [0]],
+    ]]);
+
+    $tasks = $analyzer->analyze('backlog')['tasks'];
+
+    // status is derived from depends_on, whatever the AI claimed.
+    expect($tasks[1]['status'])->toBe('blocked');
+});
+
+test('an AI task with no dependencies is never left blocked', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'X', 'branch_name' => 'fix/x', 'status' => 'blocked', 'depends_on' => []],
+    ]]);
+
+    expect($analyzer->analyze('backlog')['tasks'][0]['status'])->toBe('ready');
+});
+
 test('normalizes loose plan fields instead of rejecting them', function () {
     $analyzer = analyzerReturning(['tasks' => [
         ['branch_name' => 'fix/x', 'status' => 'ready', 'depends_on' => [], 'priority' => 250, 'type' => 'alien'],
