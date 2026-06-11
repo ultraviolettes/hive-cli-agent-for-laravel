@@ -31,3 +31,19 @@ test('harvest marks the task merged and flags newly unblocked dependents', funct
 
     exec("rm -rf {$tmp}");
 });
+
+test('harvest refuses a branch name that looks like a git option', function () {
+    $tmp = sys_get_temp_dir() . '/hive-harvest-evil-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    chdir($tmp);
+
+    $this->artisan('harvest', ['branch' => '--force', '--force' => true])
+        ->expectsOutputToContain('Invalid branch name')
+        ->assertExitCode(1);
+
+    exec("rm -rf {$tmp}");
+});

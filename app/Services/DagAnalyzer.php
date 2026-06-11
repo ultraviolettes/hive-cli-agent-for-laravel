@@ -6,6 +6,7 @@ use App\Ai\Agents\DagAnalyzerAgent;
 use App\Contracts\ClaudeCode;
 use App\Contracts\DagProvider;
 use App\Exceptions\ClaudeCodeTimeoutException;
+use App\Support\BranchName;
 
 final class DagAnalyzer implements DagProvider
 {
@@ -23,10 +24,10 @@ final class DagAnalyzer implements DagProvider
     {
         if ($this->claude->isAvailable()) {
             try {
-                return $this->viaClaudeCode($rawText, $timeout);
+                return $this->validateTasks($this->viaClaudeCode($rawText, $timeout));
             } catch (ClaudeCodeTimeoutException $e) {
                 if (! empty($anthropicApiKey)) {
-                    return $this->viaLaravelAi($rawText, $anthropicApiKey);
+                    return $this->validateTasks($this->viaLaravelAi($rawText, $anthropicApiKey));
                 }
 
                 throw new \RuntimeException(
@@ -38,7 +39,7 @@ final class DagAnalyzer implements DagProvider
         }
 
         if (! empty($anthropicApiKey)) {
-            return $this->viaLaravelAi($rawText, $anthropicApiKey);
+            return $this->validateTasks($this->viaLaravelAi($rawText, $anthropicApiKey));
         }
 
         throw new \RuntimeException(
@@ -66,6 +67,69 @@ final class DagAnalyzer implements DagProvider
         $response = (new DagAnalyzerAgent)->prompt($rawText);
 
         return ['tasks' => $response['tasks']];
+    }
+
+    /**
+     * Validate the AI-produced plan before anything downstream trusts it.
+     *
+     * Fields that reach git/gh or drive the DAG (branch_name, status,
+     * depends_on) are rejected outright when unsafe — re-running a plan is
+     * cheap, executing a corrupted one is not. Cosmetic fields (title,
+     * description, priority, type) are normalized instead.
+     *
+     * @return array{tasks: array<int, array<string, mixed>>}
+     */
+    private function validateTasks(array $result): array
+    {
+        $tasks = $result['tasks'] ?? null;
+
+        if (! is_array($tasks)) {
+            throw new \RuntimeException('AI returned an invalid plan: missing "tasks" array.');
+        }
+
+        $tasks = array_values($tasks);
+
+        foreach ($tasks as $i => $task) {
+            $n = $i + 1;
+
+            if (! is_array($task)) {
+                throw new \RuntimeException("AI returned an invalid plan: task #{$n} is not an object.");
+            }
+
+            $branch = $task['branch_name'] ?? null;
+            if (! is_string($branch)) {
+                throw new \RuntimeException("AI returned an invalid plan: task #{$n} has no branch_name.");
+            }
+
+            try {
+                BranchName::assert($branch);
+            } catch (\InvalidArgumentException $e) {
+                throw new \RuntimeException("AI returned an invalid plan: task #{$n}: " . $e->getMessage());
+            }
+
+            if (! in_array($task['status'] ?? null, ['ready', 'blocked'], true)) {
+                throw new \RuntimeException("AI returned an invalid plan: task #{$n} ({$branch}) has an invalid status (expected \"ready\" or \"blocked\").");
+            }
+
+            $deps = $task['depends_on'] ?? [];
+            if (! is_array($deps)) {
+                throw new \RuntimeException("AI returned an invalid plan: task #{$n} ({$branch}) depends_on is not an array.");
+            }
+            foreach ($deps as $dep) {
+                if (! is_int($dep)) {
+                    throw new \RuntimeException("AI returned an invalid plan: task #{$n} ({$branch}) has non-integer depends_on entries.");
+                }
+            }
+
+            $tasks[$i]['title'] = is_string($task['title'] ?? null) ? $task['title'] : '';
+            $tasks[$i]['description'] = is_string($task['description'] ?? null) ? $task['description'] : '';
+            $tasks[$i]['priority'] = max(0, min(100, (int) ($task['priority'] ?? 0)));
+            $tasks[$i]['type'] = in_array($task['type'] ?? null, ['security', 'bug', 'dependency', 'feature', 'refactor'], true)
+                ? $task['type']
+                : 'feature';
+        }
+
+        return ['tasks' => $tasks];
     }
 
     private function buildPrompt(string $rawText): string

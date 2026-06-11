@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\ValidatesBranch;
 use App\Services\WorktreeManager;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
@@ -13,6 +14,8 @@ use function Laravel\Prompts\spin;
 
 class HarvestCommand extends Command
 {
+    use ValidatesBranch;
+
     protected $signature = 'harvest {branch : Branch to harvest}
                                     {--force : Skip the confirmation prompt (for scripts/GUI)}';
 
@@ -30,6 +33,10 @@ class HarvestCommand extends Command
         }
 
         $branch = $this->argument('branch');
+        if (! $this->validBranch($branch)) {
+            return self::FAILURE;
+        }
+
         $manager = new WorktreeManager($context->path);
 
         if (! $this->option('force') && ! confirm("Harvest worktree for {$branch}?")) {
