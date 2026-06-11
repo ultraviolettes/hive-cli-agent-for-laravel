@@ -23,3 +23,21 @@ test('spawn records a bee with an inferred role and a bee_id', function () {
 
     exec("rm -rf {$tmp}");
 });
+
+test('spawn refuses a branch name that looks like a git option', function () {
+    $tmp = sys_get_temp_dir() . '/hive-spawn-evil-' . uniqid();
+    mkdir($tmp);
+    exec("git init {$tmp} -q");
+    exec("git -C {$tmp} commit --allow-empty -m init -q");
+    file_put_contents($tmp . '/.hive.json', json_encode(['project' => 'test', 'stack' => ['laravel']]));
+
+    chdir($tmp);
+
+    $this->artisan('spawn', ['branch' => '--force'])
+        ->expectsOutputToContain('Invalid branch name')
+        ->assertExitCode(1);
+
+    expect(is_dir($tmp . '/.hive/worktrees'))->toBeFalse();
+
+    exec("rm -rf {$tmp}");
+});

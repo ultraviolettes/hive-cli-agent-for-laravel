@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\ValidatesBranch;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use App\Support\HiveState;
@@ -9,6 +10,8 @@ use LaravelZero\Framework\Commands\Command;
 
 class LogsCommand extends Command
 {
+    use ValidatesBranch;
+
     protected $signature = 'logs {branch : Branch/bee whose log to show}
                                  {--lines=50 : Number of trailing lines to print}
                                  {--follow : Stream new log lines until interrupted}';
@@ -27,6 +30,10 @@ class LogsCommand extends Command
         }
 
         $branch = $this->argument('branch');
+        if (! $this->validBranch($branch)) {
+            return self::FAILURE;
+        }
+
         $task = (new HiveState($context->path))->get($branch);
         $log = $task['log_path'] ?? $context->logPath($branch);
 

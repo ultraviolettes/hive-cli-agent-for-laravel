@@ -2,6 +2,7 @@
 
 namespace App\Commands;
 
+use App\Commands\Concerns\ValidatesBranch;
 use App\Services\BeeRoleInferer;
 use App\Services\ContextBuilder;
 use App\Services\WorktreeManager;
@@ -14,6 +15,8 @@ use function Laravel\Prompts\spin;
 
 class SpawnCommand extends Command
 {
+    use ValidatesBranch;
+
     protected $signature = 'spawn {branch : Branch name (e.g. feat/my-feature)}
                                   {--context= : Task context to inject in CLAUDE.md}';
 
@@ -31,6 +34,10 @@ class SpawnCommand extends Command
         }
 
         $branch = $this->argument('branch');
+        if (! $this->validBranch($branch)) {
+            return self::FAILURE;
+        }
+
         $context = $this->option('context');
         $manager = new WorktreeManager($hive->path);
 

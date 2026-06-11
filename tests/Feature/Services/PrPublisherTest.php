@@ -35,7 +35,7 @@ test('publish commits pending changes with a conventional message before pushing
         ->and($result['url'])->toBe('https://github.com/owner/repo/pull/99')
         ->and($runner->calls[0]['command'])->toBe(['git', 'add', '-A'])
         ->and($runner->calls[1]['command'])->toBe(['git', 'commit', '-m', 'fix: login bug'])
-        ->and($runner->calls[2]['command'])->toBe(['git', 'push', '-u', 'origin', 'fix/login-bug']);
+        ->and($runner->calls[2]['command'])->toBe(['git', 'push', '-u', 'origin', '--', 'fix/login-bug']);
 
     $prCreate = $runner->calls[5]['command'];
     expect($prCreate)->toContain('gh')

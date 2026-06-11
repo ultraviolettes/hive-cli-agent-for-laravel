@@ -59,6 +59,81 @@ test('falls back to laravel/ai when claude code times out and an api key is supp
         ->and($result['tasks'][0]['branch_name'])->toBe('fix/fallback');
 });
 
+function analyzerReturning(array $payload): DagAnalyzer
+{
+    $mockClaude = Mockery::mock(ClaudeCode::class);
+    $mockClaude->shouldReceive('isAvailable')->andReturn(true);
+    $mockClaude->shouldReceive('promptJson')->andReturn($payload);
+
+    return new DagAnalyzer($mockClaude);
+}
+
+test('rejects an AI plan whose task has no branch name', function () {
+    $analyzer = analyzerReturning(['tasks' => [['title' => 'No branch', 'status' => 'ready', 'depends_on' => []]]]);
+
+    expect(fn () => $analyzer->analyze('backlog'))
+        ->toThrow(\RuntimeException::class, 'task #1');
+});
+
+test('rejects an AI plan whose branch name smells like an argument injection', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'Evil', 'branch_name' => '--force', 'status' => 'ready', 'depends_on' => []],
+    ]]);
+
+    expect(fn () => $analyzer->analyze('backlog'))
+        ->toThrow(\RuntimeException::class, 'task #1');
+});
+
+test('rejects an AI plan with an unknown task status', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'X', 'branch_name' => 'fix/x', 'status' => 'maybe', 'depends_on' => []],
+    ]]);
+
+    expect(fn () => $analyzer->analyze('backlog'))
+        ->toThrow(\RuntimeException::class, 'status');
+});
+
+test('rejects an AI plan with non-integer dependencies', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'X', 'branch_name' => 'fix/x', 'status' => 'ready', 'depends_on' => ['fix/other']],
+    ]]);
+
+    expect(fn () => $analyzer->analyze('backlog'))
+        ->toThrow(\RuntimeException::class, 'depends_on');
+});
+
+test('an AI task cannot claim ready while declaring dependencies (DAG gate bypass)', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'Dep', 'branch_name' => 'fix/dep', 'status' => 'ready', 'depends_on' => []],
+        ['title' => 'Sneaky', 'branch_name' => 'feat/sneaky', 'status' => 'ready', 'depends_on' => [0]],
+    ]]);
+
+    $tasks = $analyzer->analyze('backlog')['tasks'];
+
+    // status is derived from depends_on, whatever the AI claimed.
+    expect($tasks[1]['status'])->toBe('blocked');
+});
+
+test('an AI task with no dependencies is never left blocked', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['title' => 'X', 'branch_name' => 'fix/x', 'status' => 'blocked', 'depends_on' => []],
+    ]]);
+
+    expect($analyzer->analyze('backlog')['tasks'][0]['status'])->toBe('ready');
+});
+
+test('normalizes loose plan fields instead of rejecting them', function () {
+    $analyzer = analyzerReturning(['tasks' => [
+        ['branch_name' => 'fix/x', 'status' => 'ready', 'depends_on' => [], 'priority' => 250, 'type' => 'alien'],
+    ]]);
+
+    $tasks = $analyzer->analyze('backlog')['tasks'];
+
+    expect($tasks[0]['priority'])->toBe(100)        // clamped
+        ->and($tasks[0]['type'])->toBe('feature')   // unknown type falls back
+        ->and($tasks[0]['title'])->toBe('');        // missing title becomes empty string
+});
+
 test('a timeout without api key surfaces a clear error mentioning the remedies', function () {
     $mockClaude = Mockery::mock(ClaudeCode::class);
     $mockClaude->shouldReceive('isAvailable')->andReturn(true);

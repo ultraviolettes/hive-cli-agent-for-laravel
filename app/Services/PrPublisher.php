@@ -52,7 +52,8 @@ final class PrPublisher
             $committed = true;
         }
 
-        $this->runGit($path, ['git', 'push', '-u', 'origin', $branch]);
+        // '--' ends option parsing so a branch name can never read as a flag.
+        $this->runGit($path, ['git', 'push', '-u', 'origin', '--', $branch]);
 
         $result = $this->process->run([
             'gh', 'pr', 'create',

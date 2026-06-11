@@ -3,6 +3,7 @@
 namespace App\Commands;
 
 use App\Commands\Concerns\LaunchesAgents;
+use App\Commands\Concerns\ValidatesBranch;
 use App\Process\BackgroundRunner;
 use App\Services\AgentLauncher;
 use App\Services\WorktreeManager;
@@ -16,6 +17,7 @@ use function Laravel\Prompts\spin;
 class RunCommand extends Command
 {
     use LaunchesAgents;
+    use ValidatesBranch;
 
     protected $signature = 'run {branch? : Branch/worktree to run the agent in}
                                 {--all : Run an agent in every active worktree, in the background}
@@ -42,6 +44,10 @@ class RunCommand extends Command
         if (! $this->option('all') && ! $branch) {
             $this->error('Specify a branch or use --all.');
 
+            return self::FAILURE;
+        }
+
+        if ($branch && ! $this->validBranch($branch)) {
             return self::FAILURE;
         }
 
