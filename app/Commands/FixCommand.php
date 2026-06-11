@@ -5,6 +5,7 @@ namespace App\Commands;
 use App\Commands\Concerns\LaunchesAgents;
 use App\Commands\Concerns\ResolvesAiTimeout;
 use App\Contracts\DagProvider;
+use App\Contracts\TaskSource;
 use App\Runners\PlanRunner;
 use App\Services\ContextBuilder;
 use App\Services\NightwatchIngester;
@@ -59,10 +60,15 @@ class FixCommand extends Command
             return self::FAILURE;
         }
 
-        $ingester = new NightwatchIngester($token, $projectId);
+        /** @var TaskSource $source */
+        $source = app()->makeWith(NightwatchIngester::class, [
+            'token' => $token,
+            'projectId' => $projectId,
+            'limit' => (int) $this->option('limit'),
+        ]);
 
         $exceptions = spin(
-            fn () => $ingester->fetch((int) $this->option('limit')),
+            fn () => $source->fetch(),
             '🔭 Fetching Nightwatch exceptions...'
         );
 
@@ -75,7 +81,7 @@ class FixCommand extends Command
         $this->line('');
         $this->line(count($exceptions) . ' unresolved exception(s) found.');
 
-        $rawText = $ingester->formatForAnalysis($exceptions);
+        $rawText = $source->formatForAnalysis($exceptions);
         $state = new HiveState($context->path);
         $runner = new PlanRunner(
             app(DagProvider::class),

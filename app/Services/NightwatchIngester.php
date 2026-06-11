@@ -2,22 +2,24 @@
 
 namespace App\Services;
 
+use App\Contracts\TaskSource;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-final class NightwatchIngester
+final class NightwatchIngester implements TaskSource
 {
     public function __construct(
         private readonly string $token,
         private readonly string $projectId,
+        private readonly int $limit = 20,
     ) {}
 
-    public function fetch(int $limit = 20): array
+    public function fetch(): array
     {
         $response = Http::withToken($this->token)
             ->get("https://nightwatch.laravel.com/api/projects/{$this->projectId}/exceptions", [
                 'resolved' => false,
-                'limit' => $limit,
+                'limit' => $this->limit,
             ]);
 
         if (! $response->successful()) {
