@@ -2,11 +2,9 @@
 
 namespace App\Commands;
 
-use App\Process\ProcessRunner;
-use App\Process\SymfonyProcessRunner;
+use App\Services\PrPublisher;
 use App\Services\WorktreeInspector;
 use App\Services\WorktreeManager;
-use App\Support\BeeStatus;
 use App\Support\HiveConfig;
 use App\Support\HiveContext;
 use LaravelZero\Framework\Commands\Command;
@@ -20,11 +18,12 @@ class PrCommand extends Command
     protected $signature = 'pr
                             {branch? : Branch to create PR for}
                             {--all : Create PRs for all branches with changes or commits}
-                            {--base=main : Base branch for the PR}';
+                            {--base=main : Base branch for the PR}
+                            {--yes : Skip confirmations (for scripts/GUI)}';
 
     protected $description = 'Commit, push and create pull requests for worktree branches';
 
-    public function __construct(private readonly ProcessRunner $process = new SymfonyProcessRunner)
+    public function __construct(private readonly PrPublisher $publisher)
     {
         parent::__construct();
     }
@@ -40,7 +39,7 @@ class PrCommand extends Command
         }
 
         $manager = new WorktreeManager($context->path);
-        $inspector = new WorktreeInspector;
+        $inspector = app(WorktreeInspector::class);
         $worktrees = $manager->list();
 
         if (empty($worktrees)) {
@@ -49,7 +48,6 @@ class PrCommand extends Command
             return self::SUCCESS;
         }
 
-        // Filter worktrees based on arguments
         $targets = $this->resolveTargets($worktrees, $inspector);
 
         if (empty($targets)) {
@@ -72,7 +70,7 @@ class PrCommand extends Command
             ], $targets)
         );
 
-        if (! confirm('Create PRs for these branches?')) {
+        if (! $this->option('yes') && ! confirm('Create PRs for these branches?')) {
             return self::SUCCESS;
         }
 
@@ -84,7 +82,21 @@ class PrCommand extends Command
             $this->line("🐝 Processing <comment>{$target['branch']}</comment>...");
 
             try {
-                $this->processBranch($target, $base);
+                $result = spin(
+                    fn () => $this->publisher->publish($target, $base),
+                    "  Publishing {$target['branch']}..."
+                );
+
+                if ($result['committed']) {
+                    $this->line('  📝 Changes committed');
+                }
+
+                if ($result['already_exists']) {
+                    $this->line('  ℹ️  PR already exists');
+                } else {
+                    $this->line("  🔗 {$result['url']}");
+                }
+
                 $this->line("  ✅ PR created for <comment>{$target['branch']}</comment>");
             } catch (\RuntimeException $e) {
                 $this->error("  ❌ Failed: {$e->getMessage()}");
@@ -123,164 +135,11 @@ class PrCommand extends Command
         }
 
         if ($all) {
-            // All branches that have changes, pending work, or commits (done/idle with commits)
-            return array_values(array_filter($inspected, function ($i) {
-                // Include if has pending changes
-                if ($i['changes'] !== '—') {
-                    return true;
-                }
-                // Include if has commits (done or idle with work)
-                if ($i['status'] === BeeStatus::Done || $i['last_commit'] !== '—') {
-                    return true;
-                }
-
-                return false;
-            }));
+            return $this->publisher->candidates($inspected);
         }
 
         $this->error('Specify a branch or use --all');
 
         return [];
-    }
-
-    private function processBranch(array $target, string $base): void
-    {
-        $path = $target['path'];
-
-        // 1. Stage and commit any uncommitted changes
-        if ($target['changes'] !== '—') {
-            $this->runGit($path, ['git', 'add', '-A']);
-
-            $commitMessage = $this->generateCommitMessage($target);
-            $this->runGit($path, ['git', 'commit', '-m', $commitMessage]);
-            $this->line('  📝 Changes committed');
-        }
-
-        // 2. Push the branch
-        $branchName = $target['branch'];
-        spin(
-            fn () => $this->runGit($path, ['git', 'push', '-u', 'origin', $branchName]),
-            "  Pushing {$branchName}..."
-        );
-        $this->line('  🚀 Pushed to remote');
-
-        // 3. Create PR via gh CLI
-        $title = $this->generatePrTitle($target);
-        $body = $this->generatePrBody($target, $path);
-
-        $result = $this->process->run([
-            'gh', 'pr', 'create',
-            '--repo', $this->getRepoName($path),
-            '--head', $branchName,
-            '--base', $base,
-            '--title', $title,
-            '--body', $body,
-        ], $path, 30);
-
-        if (! $result->successful) {
-            $error = $result->errorOutput;
-            // If PR already exists, that's OK
-            if (str_contains($error, 'already exists')) {
-                $this->line('  ℹ️  PR already exists');
-
-                return;
-            }
-            throw new \RuntimeException($error);
-        }
-
-        $prUrl = trim($result->output);
-        $this->line("  🔗 {$prUrl}");
-    }
-
-    private function runGit(string $path, array $command): string
-    {
-        $result = $this->process->run($command, $path, 60);
-
-        if (! $result->successful) {
-            throw new \RuntimeException($result->errorOutput);
-        }
-
-        return trim($result->output);
-    }
-
-    private function generateCommitMessage(array $target): string
-    {
-        $branch = $target['branch'];
-        $prefix = 'feat';
-
-        if (str_starts_with($branch, 'fix/')) {
-            $prefix = 'fix';
-        } elseif (str_starts_with($branch, 'chore/')) {
-            $prefix = 'chore';
-        } elseif (str_starts_with($branch, 'refactor/')) {
-            $prefix = 'refactor';
-        }
-
-        $slug = preg_replace('/^(fix|feat|chore|refactor)\//', '', $branch);
-        $description = str_replace('-', ' ', $slug);
-
-        return "{$prefix}: {$description}";
-    }
-
-    private function generatePrTitle(array $target): string
-    {
-        // Use the last commit message as PR title if available
-        $lastCommit = $target['last_commit'];
-        if ($lastCommit !== '—') {
-            // Remove the relative time part "(X days ago)"
-            return preg_replace('/\s*\([^)]*ago\)\s*$/', '', $lastCommit);
-        }
-
-        return $this->generateCommitMessage($target);
-    }
-
-    private function generatePrBody(array $target, string $path): string
-    {
-        // Get commit log for this branch
-        $log = '';
-
-        foreach (['main', 'master', 'develop'] as $base) {
-            $result = $this->process->run(['git', 'log', '--oneline', "{$base}..HEAD"], $path);
-
-            if ($result->successful && trim($result->output) !== '') {
-                $log = trim($result->output);
-                break;
-            }
-        }
-
-        $commits = $log ? "\n\n## Commits\n\n```\n{$log}\n```" : '';
-
-        $claudeMd = '';
-        if (file_exists($path . '/CLAUDE.md')) {
-            $context = file_get_contents($path . '/CLAUDE.md');
-            // Extract the task description
-            if (preg_match('/## Your Task\s*\n\s*(.+?)(?:\n\n|$)/s', $context, $matches)) {
-                $claudeMd = "\n\n## Task Context\n\n" . trim($matches[1]);
-            }
-        }
-
-        return "## Summary\n\nAutomated PR from Hive CLI agent on branch `{$target['branch']}`."
-            . $claudeMd
-            . $commits
-            . "\n\n---\n🐝 Generated by [Hive CLI](https://github.com/ultraviolettes/hive-cli-agent-for-laravel)";
-    }
-
-    private function getRepoName(string $path): string
-    {
-        $result = $this->process->run(['gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner'], $path);
-
-        if ($result->successful) {
-            return trim($result->output);
-        }
-
-        // Fallback: parse from git remote
-        $url = trim($this->process->run(['git', 'remote', 'get-url', 'origin'], $path)->output);
-
-        // Extract owner/repo from URL
-        if (preg_match('#(?:github\.com[:/])(.+?)(?:\.git)?$#', $url, $matches)) {
-            return $matches[1];
-        }
-
-        throw new \RuntimeException('Could not determine GitHub repository name');
     }
 }
